@@ -22,6 +22,14 @@ class SimulationSettings(BaseModel):
     rolling_resistance_coefficient: float = 0.002
     air_density_kg_m3: float = 1.225
 
+    # Geometry settings
+    geometry_sample_resolution_m: float = 0.01
+    max_curvature_per_m: float = 0.5
+    curvature_warning_radius_m: float = 10.0
+    tangent_discontinuity_threshold_deg: float = 5.0
+    junction_position_tolerance_m: float = 0.01
+    bank_rate_threshold_deg_per_m: float = 10.0
+
 
 class Project(BaseModel):
     model_config = ConfigDict(json_encoders={datetime: lambda v: v.isoformat()})
