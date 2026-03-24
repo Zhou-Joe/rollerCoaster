@@ -2,49 +2,31 @@
 __pycache__/
 *.py[cod]
 *$py.class
-*.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-
-# Virtual environments
 .venv/
 venv/
-ENV/
+*.egg-info/
+dist/
+build/
+
+# Node
+node_modules/
+frontend/dist/
 
 # IDE
 .idea/
 .vscode/
 *.swp
-*.swo
-*~
+
+# Project files
+projects/
+*.json
+!.vscode/launch.json
 
 # OS
 .DS_Store
 Thumbs.db
 
-# Environment files
-.env
-.env.local
-.env.*.local
-
 # Testing
-.pytest_cache/
 .coverage
 htmlcov/
-
-# Project specific
-projects/
+.pytest_cache/
