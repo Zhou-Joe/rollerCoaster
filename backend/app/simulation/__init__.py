@@ -18,6 +18,16 @@ from .topology import (
     RouteStep,
     ConflictWarning,
 )
+from .physics import (
+    ForceComponents,
+    GForceComponents,
+    TrainPhysicsState,
+    PhysicsStepResult,
+    SimulationState,
+    PhysicsSimulator,
+    compute_train_mass,
+    compute_train_length,
+)
 
 __all__ = [
     'GeometryError',
@@ -34,4 +44,12 @@ __all__ = [
     'Route',
     'RouteStep',
     'ConflictWarning',
+    'ForceComponents',
+    'GForceComponents',
+    'TrainPhysicsState',
+    'PhysicsStepResult',
+    'SimulationState',
+    'PhysicsSimulator',
+    'compute_train_mass',
+    'compute_train_length',
 ]
