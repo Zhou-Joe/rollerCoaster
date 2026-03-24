@@ -22,6 +22,7 @@ from .dynamics import (
 
 if TYPE_CHECKING:
     from app.simulation.geometry import GeometryCache
+    from app.simulation.equipment.manager import EquipmentManager
 
 
 class PhysicsSimulator:
@@ -55,6 +56,12 @@ class PhysicsSimulator:
 
         # Build vehicle lookup
         self.vehicle_map: Dict[str, Vehicle] = {v.id: v for v in project.vehicles}
+
+        # Initialize equipment manager (lazy import to avoid circular)
+        from app.simulation.equipment.manager import EquipmentManager
+        self.equipment_manager: Optional[EquipmentManager] = None
+        if project.equipment:
+            self.equipment_manager = EquipmentManager(project)
 
         # Initialize train states
         self._initialize_train_states()
@@ -130,6 +137,17 @@ class PhysicsSimulator:
             # Train not on valid geometry - skip
             return
 
+        # Compute equipment force
+        equipment_force_n = 0.0
+        if self.equipment_manager:
+            equipment_force_n = self.equipment_manager.compute_equipment_force(
+                train_path_id=state.path_id,
+                train_s=state.s_front_m,
+                train_velocity_mps=state.velocity_mps,
+                train_mass_kg=state.mass_kg,
+                dt=dt
+            )
+
         # Compute forces
         forces = compute_forces(
             mass_kg=state.mass_kg,
@@ -139,7 +157,8 @@ class PhysicsSimulator:
             frontal_area_m2=self.frontal_area_m2,
             rolling_coefficient=settings.rolling_resistance_coefficient,
             gravity_mps2=settings.gravity_mps2,
-            air_density_kg_m3=settings.air_density_kg_m3
+            air_density_kg_m3=settings.air_density_kg_m3,
+            equipment_force_n=equipment_force_n
         )
 
         # Compute acceleration: F = ma => a = F/m
@@ -218,6 +237,8 @@ class PhysicsSimulator:
         self.running = False
         self.train_states.clear()
         self._initialize_train_states()
+        if self.equipment_manager:
+            self.equipment_manager.reset()
 
     def set_train_velocity(self, train_id: str, velocity_mps: float) -> None:
         """Set a train's velocity."""
