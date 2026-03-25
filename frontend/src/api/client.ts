@@ -15,7 +15,7 @@ export const healthCheck = async () => {
 
 // Project APIs
 export const createProject = async (name: string): Promise<Project> => {
-  const response = await api.post('/projects', { name })
+  const response = await api.post('/projects/', { metadata: { name } })
   return response.data
 }
 
@@ -25,7 +25,7 @@ export const getProject = async (id: string): Promise<Project> => {
 }
 
 export const listProjects = async (): Promise<Project[]> => {
-  const response = await api.get('/projects')
+  const response = await api.get('/projects/')
   return response.data
 }
 
@@ -36,40 +36,40 @@ export const updateProject = async (id: string, data: Partial<Project>): Promise
 
 // Geometry APIs
 export const getInterpolatedPath = async (projectId: string, pathId: string): Promise<InterpolatedPath> => {
-  const response = await api.get(`/projects/${projectId}/geometry/path/${pathId}`)
+  const response = await api.get(`/geometry/projects/${projectId}/paths/${pathId}/sample`)
   return response.data
 }
 
 export const validateGeometry = async (projectId: string): Promise<{ valid: boolean; warnings: string[]; errors: string[] }> => {
-  const response = await api.get(`/projects/${projectId}/geometry/validate`)
+  const response = await api.get(`/geometry/projects/${projectId}/geometry/validate`)
   return response.data
 }
 
-// Simulation APIs
+// Simulation APIs (under /physics/projects/)
 export const startSimulation = async (projectId: string): Promise<void> => {
-  await api.post(`/projects/${projectId}/simulate/start`)
+  await api.post(`/physics/projects/${projectId}/simulate/start`)
 }
 
 export const stopSimulation = async (projectId: string): Promise<void> => {
-  await api.post(`/projects/${projectId}/simulate/stop`)
+  await api.post(`/physics/projects/${projectId}/simulate/stop`)
 }
 
 export const resetSimulation = async (projectId: string): Promise<void> => {
-  await api.post(`/projects/${projectId}/simulate/reset`)
+  await api.post(`/physics/projects/${projectId}/simulate/reset`)
 }
 
 export const getSimulationState = async (projectId: string): Promise<SimulationState> => {
-  const response = await api.get(`/projects/${projectId}/simulate/state`)
+  const response = await api.get(`/physics/projects/${projectId}/simulate/state`)
   return response.data
 }
 
 export const stepSimulation = async (projectId: string, steps: number = 1): Promise<SimulationState> => {
-  const response = await api.post(`/projects/${projectId}/simulate/step`, { steps })
+  const response = await api.post(`/physics/projects/${projectId}/simulate/step`, { steps })
   return response.data
 }
 
 export const runSimulation = async (projectId: string, duration_s: number): Promise<SimulationState[]> => {
-  const response = await api.post(`/projects/${projectId}/simulate/run`, { duration_s })
+  const response = await api.post(`/physics/projects/${projectId}/simulate/run`, { duration_s })
   return response.data
 }
 
@@ -100,11 +100,11 @@ export const createTrain = async (projectId: string, vehicleIds: string[], pathI
 }
 
 export const setTrainPosition = async (projectId: string, trainId: string, pathId: string, position: number): Promise<void> => {
-  await api.put(`/projects/${projectId}/trains/${trainId}/position`, { path_id: pathId, position_s: position })
+  await api.put(`/physics/projects/${projectId}/trains/${trainId}/position`, { path_id: pathId, position_s: position })
 }
 
 export const setTrainVelocity = async (projectId: string, trainId: string, velocity: number): Promise<void> => {
-  await api.put(`/projects/${projectId}/trains/${trainId}/velocity`, { velocity_mps: velocity })
+  await api.put(`/physics/projects/${projectId}/trains/${trainId}/velocity`, { velocity_mps: velocity })
 }
 
 export default api

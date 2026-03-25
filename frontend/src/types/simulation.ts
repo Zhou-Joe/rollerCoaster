@@ -5,13 +5,13 @@ export interface Point {
   x: number;
   y: number;
   z: number;
-  bank_deg: number;
-  editable: boolean;
+  bank_deg?: number;
+  editable?: boolean;
 }
 
 export interface Path {
   id: string;
-  name: string;
+  name?: string;
   point_ids: string[];
 }
 
@@ -20,15 +20,15 @@ export interface Vehicle {
   length_m: number;
   dry_mass_kg: number;
   capacity: number;
-  passenger_mass_per_person_kg: number;
+  passenger_mass_per_person_kg?: number;
 }
 
 export interface Train {
   id: string;
   vehicle_ids: string[];
-  current_path_id: string;
-  front_position_s: number;
-  load_case: 'empty' | 'loaded' | 'custom';
+  current_path_id?: string;
+  front_position_s?: number;
+  load_case?: 'empty' | 'loaded' | 'custom';
 }
 
 export interface TrainPhysicsState {
