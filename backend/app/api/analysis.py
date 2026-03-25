@@ -28,7 +28,7 @@ from app.simulation.analysis import (
     ValidationReport,
 )
 
-router = APIRouter(prefix="/api/projects/{project_id}/analysis", tags=["analysis"])
+router = APIRouter(prefix="/projects/{project_id}/analysis", tags=["analysis"])
 
 
 # Request models
@@ -75,7 +75,13 @@ class MultiPositionEstopRequest(BaseModel):
 
 
 def get_project(project_id: str):
-    """Load project by ID."""
+    """Load project by ID from memory or disk."""
+    # First check in-memory projects
+    from app.api.projects import _projects
+    if project_id in _projects:
+        return _projects[project_id]
+
+    # Fall back to disk storage
     project_io = ProjectIO()
     try:
         return project_io.load(project_id)
@@ -88,7 +94,7 @@ def create_simulator(project, geometry_cache=None):
     if geometry_cache is None:
         geometry_cache = GeometryCache(project)
 
-    equipment_manager = EquipmentManager(project, geometry_cache)
+    equipment_manager = EquipmentManager(project)
     simulator = PhysicsSimulator(project, geometry_cache, equipment_manager)
     return simulator, equipment_manager, geometry_cache
 

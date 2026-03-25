@@ -36,16 +36,20 @@ class ValidationResultResponse(BaseModel):
     warnings: list[dict]
 
 
+def _get_project(project_id: str):
+    """Get project from in-memory store."""
+    from app.api.projects import _projects
+    if project_id not in _projects:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return _projects[project_id]
+
+
 @router.post("/projects/{project_id}/compute")
 async def compute_geometry(project_id: str):
     """Compute geometry for all paths."""
     from app.simulation.geometry import GeometryCache
-    from app.services.project_io import ProjectIO
 
-    project = ProjectIO.load(project_id)
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-
+    project = _get_project(project_id)
     cache = GeometryCache(project, resolution_m=project.simulation_settings.geometry_sample_resolution_m)
     cache.compute_all()
 
@@ -56,12 +60,8 @@ async def compute_geometry(project_id: str):
 async def get_geometry_status(project_id: str):
     """Get cache status."""
     from app.simulation.geometry import GeometryCache
-    from app.services.project_io import ProjectIO
 
-    project = ProjectIO.load(project_id)
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-
+    project = _get_project(project_id)
     cache = GeometryCache(project, resolution_m=project.simulation_settings.geometry_sample_resolution_m)
     status = cache.get_cache_status()
 
@@ -81,12 +81,8 @@ async def get_geometry_status(project_id: str):
 async def get_path_sample(project_id: str, path_id: str, s: float = Query(...)):
     """Get sample at arc length."""
     from app.simulation.geometry import GeometryCache
-    from app.services.project_io import ProjectIO
 
-    project = ProjectIO.load(project_id)
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-
+    project = _get_project(project_id)
     cache = GeometryCache(project, resolution_m=project.simulation_settings.geometry_sample_resolution_m)
 
     try:
@@ -119,12 +115,8 @@ async def get_path_sample(project_id: str, path_id: str, s: float = Query(...)):
 async def validate_geometry(project_id: str):
     """Validate all geometry."""
     from app.simulation.geometry import GeometryCache, GeometryValidator
-    from app.services.project_io import ProjectIO
 
-    project = ProjectIO.load(project_id)
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-
+    project = _get_project(project_id)
     cache = GeometryCache(project, resolution_m=project.simulation_settings.geometry_sample_resolution_m)
     cache.compute_all()
 

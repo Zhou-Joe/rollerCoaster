@@ -39,17 +39,21 @@ class RouteRequest(BaseModel):
     switch_states: Optional[Dict[str, str]] = None
 
 
+def _get_project(project_id: str):
+    """Get project from in-memory store."""
+    from app.api.projects import _projects
+    if project_id not in _projects:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return _projects[project_id]
+
+
 @router.get("/projects/{project_id}/topology/graph", response_model=TopologyGraphResponse)
 async def get_topology_graph(project_id: str):
     """Get full topology graph."""
     from app.simulation.topology import TopologyGraph
     from app.simulation.geometry import GeometryCache
-    from app.services.project_io import ProjectIO
 
-    project = ProjectIO.load(project_id)
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-
+    project = _get_project(project_id)
     cache = GeometryCache(project, resolution_m=project.simulation_settings.geometry_sample_resolution_m)
     cache.compute_all()
 
@@ -81,12 +85,8 @@ async def find_routes(project_id: str, request: RouteRequest):
     """Find routes between paths."""
     from app.simulation.topology import TopologyGraph, RouteFinder
     from app.simulation.geometry import GeometryCache
-    from app.services.project_io import ProjectIO
 
-    project = ProjectIO.load(project_id)
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-
+    project = _get_project(project_id)
     cache = GeometryCache(project, resolution_m=project.simulation_settings.geometry_sample_resolution_m)
     cache.compute_all()
 

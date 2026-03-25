@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from typing import Dict
-from datetime import datetime
+from datetime import datetime, timezone
 from app.models.project import Project, ProjectMetadata
 from app.services.project_io import ProjectIO
 import uuid
@@ -41,9 +41,32 @@ async def update_project(project_id: str, updates: Dict):
     if project_id not in _projects:
         raise HTTPException(status_code=404, detail="Project not found")
     project = _projects[project_id]
+
+    # Update all allowed fields
     if "metadata" in updates:
         project.metadata = ProjectMetadata(**updates["metadata"])
-    project.metadata.modified_at = datetime.utcnow()
+    if "points" in updates:
+        from app.models.track import Point
+        project.points = [Point(**p) for p in updates["points"]]
+    if "paths" in updates:
+        from app.models.track import Path
+        project.paths = [Path(**p) for p in updates["paths"]]
+    if "junctions" in updates:
+        from app.models.topology import Junction
+        project.junctions = [Junction(**j) for j in updates["junctions"]]
+    if "vehicles" in updates:
+        from app.models.train import Vehicle
+        project.vehicles = [Vehicle(**v) for v in updates["vehicles"]]
+    if "trains" in updates:
+        from app.models.train import Train
+        project.trains = [Train(**t) for t in updates["trains"]]
+    if "equipment" in updates:
+        project.equipment = updates["equipment"]
+    if "blocks" in updates:
+        from app.models.topology import Block
+        project.blocks = [Block(**b) for b in updates["blocks"]]
+
+    project.metadata.modified_at = datetime.now(timezone.utc)
     _projects[project_id] = project
     return {"id": project_id, **project.model_dump()}
 

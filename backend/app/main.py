@@ -5,6 +5,7 @@ from app.api.router import api_router
 from app.api.geometry import router as geometry_router
 from app.api.topology import router as topology_router
 from app.api.physics import router as physics_router
+from app.api.analysis import router as analysis_router
 
 app = FastAPI(
     title=settings.app_name,
@@ -24,6 +25,7 @@ app.include_router(api_router, prefix="/api")
 app.include_router(geometry_router, prefix="/api")
 app.include_router(topology_router, prefix="/api")
 app.include_router(physics_router, prefix="/api")
+app.include_router(analysis_router, prefix="/api")
 
 
 @app.get("/health")
