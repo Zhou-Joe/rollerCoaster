@@ -90,9 +90,12 @@ function SupportPillars({ path }: { path: InterpolatedPath }) {
     for (let s = 0; s < path.total_length; s += pillarSpacing) {
       const point = path.points.find((p) => Math.abs(p.s - s) < 1);
       if (point && point.position[2] > 2) {
+        // Position the pillar so its bottom is at z=0 and top is at the track
+        // The cylinder's center is at height/2, so we place it at height/2
+        const trackHeight = point.position[2];
         positions.push({
-          pos: new THREE.Vector3(point.position[0], point.position[1], 0),
-          height: point.position[2],
+          pos: new THREE.Vector3(point.position[0], point.position[1], trackHeight / 2),
+          height: trackHeight,
         });
       }
     }
