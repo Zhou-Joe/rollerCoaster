@@ -5,7 +5,7 @@ import {
 } from '@mantine/core';
 import { IconPlus, IconTrash } from '@tabler/icons-react';
 import { useProjectStore } from '../../state/projectStore';
-import { addPoint, createPath, createTrain, setTrainVelocity } from '../../api/client';
+import { updateProject } from '../../api/client';
 
 export function TrackEditor() {
   const { currentProject, simulationState, interpolatedPaths } = useProjectStore();
@@ -22,11 +22,40 @@ export function TrackEditor() {
   const handleAddPoint = async () => {
     if (!currentProject.id) return;
     try {
-      await addPoint(currentProject.id, newPoint);
-      // Refresh project
+      const newPointData = {
+        id: `point_${Date.now()}`,
+        x: newPoint.x,
+        y: newPoint.y,
+        z: newPoint.z,
+        bank_deg: newPoint.bank_deg,
+        editable: true
+      };
+      await updateProject(currentProject.id, {
+        points: [...currentProject.points, newPointData]
+      });
       window.location.reload();
     } catch (e) {
       console.error('Failed to add point:', e);
+    }
+  };
+
+  const handleDeletePoint = async (pointId: string) => {
+    if (!currentProject.id) return;
+    try {
+      const newPoints = currentProject.points.filter(p => p.id !== pointId);
+      // Also update paths to remove the deleted point
+      const newPaths = currentProject.paths.map(path => ({
+        ...path,
+        point_ids: path.point_ids.filter(id => id !== pointId)
+      })).filter(path => path.point_ids.length >= 2);
+
+      await updateProject(currentProject.id, {
+        points: newPoints,
+        paths: newPaths
+      });
+      window.location.reload();
+    } catch (e) {
+      console.error('Failed to delete point:', e);
     }
   };
 
@@ -34,25 +63,55 @@ export function TrackEditor() {
     if (!currentProject.id || currentProject.points.length < 2) return;
     try {
       const pointIds = currentProject.points.map(p => p.id);
-      await createPath(currentProject.id, 'New Path', pointIds);
+      const newPath = {
+        id: `path_${Date.now()}`,
+        name: 'Main Track',
+        point_ids: pointIds
+      };
+      await updateProject(currentProject.id, {
+        paths: [...currentProject.paths, newPath]
+      });
       window.location.reload();
     } catch (e) {
       console.error('Failed to create path:', e);
     }
   };
 
+  const handleDeletePath = async (pathId: string) => {
+    if (!currentProject.id) return;
+    try {
+      const newPaths = currentProject.paths.filter(p => p.id !== pathId);
+      await updateProject(currentProject.id, { paths: newPaths });
+      window.location.reload();
+    } catch (e) {
+      console.error('Failed to delete path:', e);
+    }
+  };
+
   const handleCreateTrain = async () => {
     if (!currentProject.id || currentProject.vehicles.length === 0) return;
     try {
-      await createTrain(
-        currentProject.id,
-        currentProject.vehicles.map(v => v.id),
-        currentProject.paths[0]?.id || '',
-        0
-      );
+      const newTrain = {
+        id: `train_${Date.now()}`,
+        vehicle_ids: currentProject.vehicles.map(v => v.id)
+      };
+      await updateProject(currentProject.id, {
+        trains: [...currentProject.trains, newTrain]
+      });
       window.location.reload();
     } catch (e) {
       console.error('Failed to create train:', e);
+    }
+  };
+
+  const handleDeleteTrain = async (trainId: string) => {
+    if (!currentProject.id) return;
+    try {
+      const newTrains = currentProject.trains.filter(t => t.id !== trainId);
+      await updateProject(currentProject.id, { trains: newTrains });
+      window.location.reload();
+    } catch (e) {
+      console.error('Failed to delete train:', e);
     }
   };
 
@@ -112,7 +171,12 @@ export function TrackEditor() {
                 <Paper key={point.id} p="xs" withBorder style={{ background: '#222' }}>
                   <Group justify="space-between">
                     <Text size="xs" fw={500}>Point {idx + 1}</Text>
-                    <ActionIcon size="xs" variant="subtle" color="red">
+                    <ActionIcon
+                      size="xs"
+                      variant="subtle"
+                      color="red"
+                      onClick={() => handleDeletePoint(point.id)}
+                    >
                       <IconTrash size={12} />
                     </ActionIcon>
                   </Group>
@@ -157,10 +221,18 @@ export function TrackEditor() {
                 <Paper key={path.id} p="xs" withBorder style={{ background: '#222' }}>
                   <Group justify="space-between">
                     <Text size="xs" fw={500}>{path.name || path.id}</Text>
-                    <Badge size="xs">{path.point_ids.length} points</Badge>
+                    <ActionIcon
+                      size="xs"
+                      variant="subtle"
+                      color="red"
+                      onClick={() => handleDeletePath(path.id)}
+                    >
+                      <IconTrash size={12} />
+                    </ActionIcon>
                   </Group>
+                  <Text size="xs" c="dimmed">{path.point_ids.length} points</Text>
                   {interpolatedPaths.get(path.id) && (
-                    <Text size="xs" c="dimmed" mt="xs">
+                    <Text size="xs" c="dimmed">
                       Length: {interpolatedPaths.get(path.id)!.total_length.toFixed(1)}m
                     </Text>
                   )}
@@ -192,27 +264,30 @@ export function TrackEditor() {
                   Create Train
                 </Button>
               )}
-              {simulationState?.trains.map((train) => (
-                <Paper key={train.train_id} p="xs" withBorder style={{ background: '#222' }}>
-                  <Text size="xs" fw={500}>{train.train_id}</Text>
-                  <Group gap="xs" mt="xs">
-                    <Badge size="xs" color={train.velocity_mps > 0 ? 'green' : 'gray'}>
-                      {train.velocity_mps.toFixed(1)} m/s
-                    </Badge>
-                    <Text size="xs" c="dimmed">Pos: {train.s_front_m.toFixed(1)}m</Text>
-                  </Group>
-                  <Group grow mt="xs">
-                    <NumberInput
+              {currentProject.trains.map((train) => (
+                <Paper key={train.id} p="xs" withBorder style={{ background: '#222' }}>
+                  <Group justify="space-between">
+                    <Text size="xs" fw={500}>{train.id}</Text>
+                    <ActionIcon
                       size="xs"
-                      placeholder="Velocity"
-                      defaultValue={train.velocity_mps}
-                      onBlur={async (e) => {
-                        const vel = parseFloat(e.target.value);
-                        if (!isNaN(vel) && currentProject.id) {
-                          await setTrainVelocity(currentProject.id, train.train_id, vel);
-                        }
-                      }}
-                    />
+                      variant="subtle"
+                      color="red"
+                      onClick={() => handleDeleteTrain(train.id)}
+                    >
+                      <IconTrash size={12} />
+                    </ActionIcon>
+                  </Group>
+                  <Text size="xs" c="dimmed">{train.vehicle_ids.length} vehicle(s)</Text>
+                </Paper>
+              ))}
+              {simulationState?.trains.map((trainState) => (
+                <Paper key={trainState.train_id} p="xs" withBorder style={{ background: '#1a1a1a' }}>
+                  <Text size="xs" c="dimmed">Simulation State</Text>
+                  <Group gap="xs" mt="xs">
+                    <Badge size="xs" color={trainState.velocity_mps > 0 ? 'green' : 'gray'}>
+                      {trainState.velocity_mps.toFixed(1)} m/s
+                    </Badge>
+                    <Text size="xs" c="dimmed">Pos: {trainState.s_front_m.toFixed(1)}m</Text>
                   </Group>
                 </Paper>
               ))}

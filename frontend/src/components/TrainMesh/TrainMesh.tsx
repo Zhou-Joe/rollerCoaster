@@ -14,7 +14,7 @@ export function TrainMesh({ trainState, path, color = '#dc2626', selected = fals
 
   // Find the sample point closest to the train's front position
   const frontPoint = useMemo(() => {
-    return path.points.find((p) => Math.abs(p.arc_length - trainState.s_front_m) < 0.5);
+    return path.points.find((p) => Math.abs(p.s - trainState.s_front_m) < 0.5);
   }, [path.points, trainState.s_front_m]);
 
   // Calculate train orientation from Frenet-Serret frame

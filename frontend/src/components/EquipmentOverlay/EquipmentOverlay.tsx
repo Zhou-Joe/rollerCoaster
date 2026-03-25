@@ -12,9 +12,10 @@ export function EquipmentOverlay({ equipment, paths }: EquipmentOverlayProps) {
     <group>
       {equipment.map((eq) => {
         const path = paths.get(eq.path_id);
-        if (!path) return null;
+        if (!path || !path.points || path.points.length === 0) return null;
 
-        const startPoint = path.points.find((p) => Math.abs(p.arc_length - eq.start_s) < 0.5);
+        // Find the point at the equipment's start position
+        const startPoint = path.points.find((p) => Math.abs(p.s - eq.start_s) < 1);
         if (!startPoint) return null;
 
         return (
@@ -42,8 +43,11 @@ function EquipmentMarker({ equipment, position }: EquipmentMarkerProps) {
       case 'lift':
         return equipment.enabled ? '#8b5cf6' : '#6b7280';
       case 'pneumatic_brake':
-        const brake = equipment as any;
-        return brake.state === 'open' ? '#22c55e' : '#ef4444';
+        return '#22c55e'; // Green for brakes
+      case 'trim_brake':
+        return '#f59e0b'; // Orange for trim
+      case 'booster':
+        return '#06b6d4'; // Cyan for booster
       default:
         return '#6b7280';
     }
@@ -56,8 +60,11 @@ function EquipmentMarker({ equipment, position }: EquipmentMarkerProps) {
       case 'lift':
         return 'LIFT';
       case 'pneumatic_brake':
-        const brake = equipment as any;
-        return brake.state === 'open' ? 'BRAKE ○' : 'BRAKE ●';
+        return 'BRAKE';
+      case 'trim_brake':
+        return 'TRIM';
+      case 'booster':
+        return 'BOOST';
       default:
         return 'EQ';
     }
@@ -87,6 +94,12 @@ function EquipmentMarker({ equipment, position }: EquipmentMarkerProps) {
       >
         {label}
       </Text>
+
+      {/* Range indicator - shows equipment extent */}
+      <mesh position={[0, 0.05, 0]} receiveShadow>
+        <boxGeometry args={[equipment.end_s - equipment.start_s, 0.1, 0.5]} />
+        <meshStandardMaterial color={color} transparent opacity={0.3} />
+      </mesh>
     </group>
   );
 }

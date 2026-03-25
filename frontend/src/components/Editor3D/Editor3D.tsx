@@ -3,6 +3,7 @@ import { OrbitControls, Grid, GizmoHelper, GizmoViewport, PerspectiveCamera } fr
 import { Suspense } from 'react';
 import { TrackMesh } from '../TrackMesh';
 import { TrainMesh } from '../TrainMesh';
+import { EquipmentOverlay } from '../EquipmentOverlay';
 import { useProjectStore } from '../../state/projectStore';
 import { Box, Text } from '@mantine/core';
 
@@ -63,6 +64,14 @@ export function Editor3D() {
             );
           })}
 
+          {/* Equipment overlays */}
+          {currentProject?.equipment && currentProject.equipment.length > 0 && (
+            <EquipmentOverlay
+              equipment={currentProject.equipment}
+              paths={interpolatedPaths}
+            />
+          )}
+
           {/* Train meshes */}
           {simulationState?.trains.map((trainState) => {
             const path = interpolatedPaths.get(trainState.path_id);
@@ -75,9 +84,6 @@ export function Editor3D() {
               />
             );
           })}
-
-          {/* Equipment overlays */}
-          {/* <EquipmentOverlay /> */}
         </Suspense>
 
         {/* Gizmo for orientation */}
@@ -98,11 +104,12 @@ export function Editor3D() {
         }}
       >
         <Text size="xs" c="gray.4">
-          {currentProject?.metadata.name || 'No project loaded'}
+          {currentProject?.metadata?.name || 'No project loaded'}
         </Text>
         <Text size="xs" c="dimmed">
           Paths: {currentProject?.paths.length || 0} |
-          Trains: {simulationState?.trains.length || 0}
+          Trains: {simulationState?.trains.length || 0} |
+          Equipment: {currentProject?.equipment?.length || 0}
         </Text>
       </Box>
     </Box>
