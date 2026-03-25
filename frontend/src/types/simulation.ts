@@ -55,20 +55,21 @@ export interface TrainPhysicsState {
 }
 
 export interface SamplePoint {
+  s: number;
   position: [number, number, number];
   tangent: [number, number, number];
   normal: [number, number, number];
   binormal: [number, number, number];
   curvature: number;
+  radius: number;
   slope_deg: number;
   bank_deg: number;
-  arc_length: number;
 }
 
 export interface InterpolatedPath {
   path_id: string;
-  points: SamplePoint[];
   total_length: number;
+  points: SamplePoint[];
 }
 
 export interface SimulationState {

@@ -30,7 +30,7 @@ export function TrackMesh({ path, selected = false, color = '#4a90d9' }: TrackMe
     const tieSpacing = 1.5; // meters between ties
 
     for (let s = 0; s < path.total_length; s += tieSpacing) {
-      const point = path.points.find((p) => Math.abs(p.arc_length - s) < 0.5);
+      const point = path.points.find((p) => Math.abs(p.s - s) < 0.5);
       if (point) {
         tiePositions.push(new THREE.Vector3(...point.position));
         // Create quaternion from the Frenet-Serret frame
@@ -88,7 +88,7 @@ function SupportPillars({ path }: { path: InterpolatedPath }) {
     const pillarSpacing = 10; // meters between pillars
 
     for (let s = 0; s < path.total_length; s += pillarSpacing) {
-      const point = path.points.find((p) => Math.abs(p.arc_length - s) < 1);
+      const point = path.points.find((p) => Math.abs(p.s - s) < 1);
       if (point && point.position[2] > 2) {
         positions.push({
           pos: new THREE.Vector3(point.position[0], point.position[1], 0),

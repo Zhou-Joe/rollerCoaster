@@ -19,6 +19,12 @@ class SamplePointResponse(BaseModel):
     bank_deg: float
 
 
+class InterpolatedPathResponse(BaseModel):
+    path_id: str
+    total_length: float
+    points: List[SamplePointResponse]
+
+
 class CacheStatusResponse(BaseModel):
     path_id: str
     computed: bool
@@ -108,6 +114,44 @@ async def get_path_sample(project_id: str, path_id: str, s: float = Query(...)):
         radius=sample.radius,
         slope_deg=sample.slope_deg,
         bank_deg=sample.bank_deg
+    )
+
+
+@router.get("/projects/{project_id}/paths/{path_id}", response_model=InterpolatedPathResponse)
+async def get_interpolated_path(project_id: str, path_id: str):
+    """Get full interpolated path with all sample points."""
+    from app.simulation.geometry import GeometryCache
+
+    project = _get_project(project_id)
+    cache = GeometryCache(project, resolution_m=project.simulation_settings.geometry_sample_resolution_m)
+
+    try:
+        path_data = cache.get_path(path_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    if not path_data or not path_data.samples:
+        raise HTTPException(status_code=422, detail="Path has no geometry")
+
+    points = [
+        SamplePointResponse(
+            s=sample.s,
+            position=list(sample.position),
+            tangent=list(sample.tangent),
+            normal=list(sample.normal),
+            binormal=list(sample.binormal),
+            curvature=sample.curvature,
+            radius=sample.radius,
+            slope_deg=sample.slope_deg,
+            bank_deg=sample.bank_deg
+        )
+        for sample in path_data.samples
+    ]
+
+    return InterpolatedPathResponse(
+        path_id=path_id,
+        total_length=path_data.total_length,
+        points=points
     )
 
 

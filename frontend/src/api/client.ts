@@ -36,7 +36,7 @@ export const updateProject = async (id: string, data: Partial<Project>): Promise
 
 // Geometry APIs
 export const getInterpolatedPath = async (projectId: string, pathId: string): Promise<InterpolatedPath> => {
-  const response = await api.get(`/geometry/projects/${projectId}/paths/${pathId}/sample`)
+  const response = await api.get(`/geometry/projects/${projectId}/paths/${pathId}`)
   return response.data
 }
 
