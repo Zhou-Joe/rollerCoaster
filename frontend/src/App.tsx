@@ -1,8 +1,8 @@
 import { BrowserRouter, Routes, Route, Link } from 'react-router-dom';
-import { AppShell, Text, Group, Box, Anchor, Button, Badge, Tabs, ScrollArea } from '@mantine/core';
+import { AppShell, Text, Group, Box, Anchor, Button, Badge, Tabs, ScrollArea, Modal, Stack, ActionIcon } from '@mantine/core';
 import { useQuery } from '@tanstack/react-query';
 import { useState, useEffect, useCallback } from 'react';
-import { healthCheck, listProjects, getProject, getInterpolatedPath, startSimulation, stopSimulation, resetSimulation, stepSimulation, getSimulationState, createProject, updateProject } from './api/client';
+import { healthCheck, listProjects, getProject, getInterpolatedPath, startSimulation, stopSimulation, resetSimulation, stepSimulation, getSimulationState, createProject, updateProject, deleteProject } from './api/client';
 import { useProjectStore } from './state/projectStore';
 import { Editor3D } from './components/Editor3D';
 import { SimulationPlayer } from './components/SimulationPlayer';
@@ -10,6 +10,8 @@ import { TelemetryPanel } from './components/TelemetryPanel';
 import { TrackEditor } from './components/TrackEditor/TrackEditor';
 import { EquipmentEditor } from './components/EquipmentEditor/EquipmentEditor';
 import { VehicleEditor } from './components/VehicleEditor/VehicleEditor';
+import { ProjectManager } from './components/ProjectManager/ProjectManager';
+import { IconTrash } from '@tabler/icons-react';
 
 function App() {
   const { data: health, isLoading } = useQuery({
@@ -35,6 +37,7 @@ function App() {
 
   const [simulationInterval, setSimulationInterval] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<string>('track');
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
   // Load first project on mount
   useEffect(() => {
@@ -201,10 +204,19 @@ function App() {
     await loadProject(projectId);
   };
 
-  const handleNewProject = async () => {
-    const project = await createProject('New Project');
-    await refetchProjects();
-    await loadProject(project.id!);
+  const handleDeleteProject = async (id: string) => {
+    try {
+      await deleteProject(id);
+      setDeleteConfirmId(null);
+      await refetchProjects();
+      // If we deleted the current project, select another one
+      if (currentProject?.id === id) {
+        setCurrentProject(null);
+        // The useEffect will load the first available project
+      }
+    } catch (e) {
+      console.error('Failed to delete project:', e);
+    }
   };
 
   return (
@@ -234,40 +246,16 @@ function App() {
 
           <AppShell.Section p="md" grow>
             <ScrollArea.Autosize mah="calc(100vh - 200px)">
-              {/* Project selector */}
-              {projects && projects.length > 0 && (
-                <Box mb="md">
-                  <Text size="xs" c="dimmed" mb="xs">Project</Text>
-                  <select
-                    style={{
-                      background: '#333',
-                      color: 'white',
-                      border: '1px solid #444',
-                      borderRadius: 4,
-                      padding: '8px',
-                      width: '100%',
-                    }}
-                    onChange={(e) => loadProject(e.target.value)}
-                    value={currentProject?.id || ''}
-                  >
-                    {projects.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.metadata?.name || 'Untitled'}
-                      </option>
-                    ))}
-                  </select>
-                </Box>
-              )}
+              {/* Project Manager */}
+              <ProjectManager
+                currentProject={currentProject}
+                onSelectProject={loadProject}
+              />
 
-              {/* Action buttons */}
-              <Group mb="md" grow>
-                <Button size="xs" variant="light" onClick={handleNewProject}>
-                  New Project
-                </Button>
-                <Button size="xs" variant="light" onClick={handleCreateDemoProject}>
-                  Demo
-                </Button>
-              </Group>
+              {/* Demo button */}
+              <Button size="xs" variant="light" onClick={handleCreateDemoProject} fullWidth mb="md">
+                Create Demo Coaster
+              </Button>
 
               {/* Mode selector */}
               <Box mb="md">
@@ -300,7 +288,17 @@ function App() {
               {/* Project info */}
               {currentProject && (
                 <Box mb="md" p="sm" style={{ background: '#2a2a2a', borderRadius: 4 }}>
-                  <Text size="sm" c="white" fw={500}>{currentProject.metadata?.name || 'Untitled'}</Text>
+                  <Group justify="space-between">
+                    <Text size="sm" c="white" fw={500}>{currentProject.metadata?.name || 'Untitled'}</Text>
+                    <ActionIcon
+                      size="xs"
+                      variant="subtle"
+                      color="red"
+                      onClick={() => setDeleteConfirmId(currentProject.id!)}
+                    >
+                      <IconTrash size={14} />
+                    </ActionIcon>
+                  </Group>
                   <Group mt="xs">
                     <Badge size="sm">Points: {currentProject.points?.length || 0}</Badge>
                     <Badge size="sm">Paths: {currentProject.paths?.length || 0}</Badge>
@@ -424,6 +422,31 @@ function App() {
           </Routes>
         </AppShell.Main>
       </AppShell>
+
+      {/* Delete Confirmation Modal */}
+      <Modal
+        opened={deleteConfirmId !== null}
+        onClose={() => setDeleteConfirmId(null)}
+        title="Delete Project"
+        size="sm"
+      >
+        <Stack gap="md">
+          <Text size="sm">
+            Are you sure you want to delete this project? This action cannot be undone.
+          </Text>
+          <Group grow>
+            <Button variant="subtle" onClick={() => setDeleteConfirmId(null)}>
+              Cancel
+            </Button>
+            <Button
+              color="red"
+              onClick={() => handleDeleteProject(deleteConfirmId!)}
+            >
+              Delete
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
     </BrowserRouter>
   );
 }
