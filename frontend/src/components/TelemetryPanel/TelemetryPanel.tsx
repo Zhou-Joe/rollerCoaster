@@ -1,0 +1,175 @@
+import { Box, Paper, Text, Group, Progress, Stack, Badge } from '@mantine/core';
+import { useProjectStore } from '../../state/projectStore';
+
+interface TelemetryPanelProps {
+  trainId?: string;
+}
+
+export function TelemetryPanel({ trainId }: TelemetryPanelProps) {
+  const { simulationState, selectedTrainId } = useProjectStore();
+
+  const targetTrainId = trainId || selectedTrainId;
+  const train = simulationState?.trains.find((t) => t.train_id === targetTrainId);
+
+  if (!train) {
+    return (
+      <Paper p="md" withBorder>
+        <Text c="dimmed" size="sm">
+          No train selected
+        </Text>
+      </Paper>
+    );
+  }
+
+  return (
+    <Box
+      p="md"
+      style={{
+        background: 'rgba(30, 30, 30, 0.95)',
+        borderRadius: 8,
+        border: '1px solid #404040',
+        minWidth: 280,
+      }}
+    >
+      <Text size="lg" fw={600} c="white" mb="md">
+        Train Telemetry
+      </Text>
+
+      <Stack gap="xs">
+        {/* Train ID */}
+        <Group justify="space-between">
+          <Text size="sm" c="gray.4">
+            Train ID
+          </Text>
+          <Badge variant="filled" color="blue">
+            {train.train_id}
+          </Badge>
+        </Group>
+
+        {/* Position */}
+        <MetricRow
+          label="Position"
+          value={`${train.s_front_m.toFixed(1)} m`}
+        />
+
+        {/* Velocity */}
+        <MetricRow
+          label="Velocity"
+          value={`${train.velocity_mps.toFixed(2)} m/s`}
+          color={getSpeedColor(train.velocity_mps)}
+        />
+
+        {/* Acceleration */}
+        <MetricRow
+          label="Acceleration"
+          value={`${train.acceleration_mps2.toFixed(2)} m/s²`}
+          color={train.acceleration_mps2 > 0 ? 'green' : train.acceleration_mps2 < -3 ? 'red' : 'yellow'}
+        />
+
+        {/* Mass */}
+        <MetricRow
+          label="Mass"
+          value={`${(train.mass_kg / 1000).toFixed(1)} t`}
+        />
+
+        {/* Divider */}
+        <Box my="xs" style={{ borderTop: '1px solid #404040' }} />
+
+        {/* G-Forces */}
+        <Text size="sm" fw={600} c="gray.3" mt="xs">
+          G-Forces
+        </Text>
+
+        <GForceBar label="Normal" value={train.gforces.normal_g} />
+        <GForceBar label="Lateral" value={train.gforces.lateral_g} />
+        <GForceBar label="Vertical" value={train.gforces.vertical_g} />
+        <GForceBar label="Resultant" value={train.gforces.resultant_g} highlight />
+
+        {/* Divider */}
+        <Box my="xs" style={{ borderTop: '1px solid #404040' }} />
+
+        {/* Forces */}
+        <Text size="sm" fw={600} c="gray.3" mt="xs">
+          Forces
+        </Text>
+
+        <MetricRow
+          label="Gravity"
+          value={`${train.forces.gravity_tangent_n.toFixed(0)} N`}
+        />
+        <MetricRow
+          label="Drag"
+          value={`${train.forces.drag_n.toFixed(0)} N`}
+        />
+        <MetricRow
+          label="Equipment"
+          value={`${train.forces.equipment_n.toFixed(0)} N`}
+          color={train.forces.equipment_n !== 0 ? 'blue' : undefined}
+        />
+        <MetricRow
+          label="Total"
+          value={`${train.forces.total_n.toFixed(0)} N`}
+          bold
+        />
+      </Stack>
+    </Box>
+  );
+}
+
+interface MetricRowProps {
+  label: string;
+  value: string;
+  color?: string;
+  bold?: boolean;
+}
+
+function MetricRow({ label, value, color, bold }: MetricRowProps) {
+  return (
+    <Group justify="space-between">
+      <Text size="sm" c="gray.4">
+        {label}
+      </Text>
+      <Text size="sm" c={color || 'white'} fw={bold ? 600 : 400} ff="monospace">
+        {value}
+      </Text>
+    </Group>
+  );
+}
+
+interface GForceBarProps {
+  label: string;
+  value: number;
+  highlight?: boolean;
+}
+
+function GForceBar({ label, value }: GForceBarProps) {
+  // G-force display: 0-6G range, centered at 1G
+  const percent = Math.min(100, Math.max(0, (value + 2) / 8 * 100));
+  const color = value < -1 || value > 5 ? 'red' : value < 0 || value > 4 ? 'yellow' : 'green';
+
+  return (
+    <Box>
+      <Group justify="space-between" mb={2}>
+        <Text size="xs" c="gray.4">
+          {label}
+        </Text>
+        <Text size="xs" c="white" ff="monospace">
+          {value.toFixed(2)} G
+        </Text>
+      </Group>
+      <Progress
+        value={percent}
+        color={color}
+        size="xs"
+        style={{ background: '#333' }}
+      />
+    </Box>
+  );
+}
+
+function getSpeedColor(velocity: number): string {
+  if (velocity < 5) return 'green';
+  if (velocity < 15) return 'yellow';
+  if (velocity < 25) return 'orange';
+  return 'red';
+}

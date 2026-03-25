@@ -1,4 +1,5 @@
 import axios from 'axios'
+import type { Project, SimulationState, InterpolatedPath } from '../types'
 
 const api = axios.create({
   baseURL: '/api',
@@ -7,20 +8,12 @@ const api = axios.create({
   },
 })
 
-export interface Project {
-  id: string
-  metadata: {
-    name: string
-    units: string
-    version: number
-  }
-}
-
 export const healthCheck = async () => {
   const response = await axios.get('/health')
   return response.data
 }
 
+// Project APIs
 export const createProject = async (name: string): Promise<Project> => {
   const response = await api.post('/projects', { name })
   return response.data
@@ -34,6 +27,84 @@ export const getProject = async (id: string): Promise<Project> => {
 export const listProjects = async (): Promise<Project[]> => {
   const response = await api.get('/projects')
   return response.data
+}
+
+export const updateProject = async (id: string, data: Partial<Project>): Promise<Project> => {
+  const response = await api.put(`/projects/${id}`, data)
+  return response.data
+}
+
+// Geometry APIs
+export const getInterpolatedPath = async (projectId: string, pathId: string): Promise<InterpolatedPath> => {
+  const response = await api.get(`/projects/${projectId}/geometry/path/${pathId}`)
+  return response.data
+}
+
+export const validateGeometry = async (projectId: string): Promise<{ valid: boolean; warnings: string[]; errors: string[] }> => {
+  const response = await api.get(`/projects/${projectId}/geometry/validate`)
+  return response.data
+}
+
+// Simulation APIs
+export const startSimulation = async (projectId: string): Promise<void> => {
+  await api.post(`/projects/${projectId}/simulate/start`)
+}
+
+export const stopSimulation = async (projectId: string): Promise<void> => {
+  await api.post(`/projects/${projectId}/simulate/stop`)
+}
+
+export const resetSimulation = async (projectId: string): Promise<void> => {
+  await api.post(`/projects/${projectId}/simulate/reset`)
+}
+
+export const getSimulationState = async (projectId: string): Promise<SimulationState> => {
+  const response = await api.get(`/projects/${projectId}/simulate/state`)
+  return response.data
+}
+
+export const stepSimulation = async (projectId: string, steps: number = 1): Promise<SimulationState> => {
+  const response = await api.post(`/projects/${projectId}/simulate/step`, { steps })
+  return response.data
+}
+
+export const runSimulation = async (projectId: string, duration_s: number): Promise<SimulationState[]> => {
+  const response = await api.post(`/projects/${projectId}/simulate/run`, { duration_s })
+  return response.data
+}
+
+// Points API
+export const addPoint = async (projectId: string, point: { x: number; y: number; z: number; bank_deg: number }): Promise<{ id: string }> => {
+  const response = await api.post(`/projects/${projectId}/points`, point)
+  return response.data
+}
+
+export const updatePoint = async (projectId: string, pointId: string, data: { x?: number; y?: number; z?: number; bank_deg?: number }): Promise<void> => {
+  await api.put(`/projects/${projectId}/points/${pointId}`, data)
+}
+
+export const deletePoint = async (projectId: string, pointId: string): Promise<void> => {
+  await api.delete(`/projects/${projectId}/points/${pointId}`)
+}
+
+// Paths API
+export const createPath = async (projectId: string, name: string, pointIds: string[]): Promise<{ id: string }> => {
+  const response = await api.post(`/projects/${projectId}/paths`, { name, point_ids: pointIds })
+  return response.data
+}
+
+// Trains API
+export const createTrain = async (projectId: string, vehicleIds: string[], pathId: string, position: number): Promise<{ id: string }> => {
+  const response = await api.post(`/projects/${projectId}/trains`, { vehicle_ids: vehicleIds, current_path_id: pathId, front_position_s: position })
+  return response.data
+}
+
+export const setTrainPosition = async (projectId: string, trainId: string, pathId: string, position: number): Promise<void> => {
+  await api.put(`/projects/${projectId}/trains/${trainId}/position`, { path_id: pathId, position_s: position })
+}
+
+export const setTrainVelocity = async (projectId: string, trainId: string, velocity: number): Promise<void> => {
+  await api.put(`/projects/${projectId}/trains/${trainId}/velocity`, { velocity_mps: velocity })
 }
 
 export default api

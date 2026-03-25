@@ -9,12 +9,20 @@ const queryClient = new QueryClient()
 
 const theme = createTheme({
   primaryColor: 'blue',
+  defaultRadius: 'sm',
+  components: {
+    Paper: {
+      defaultProps: {
+        bg: 'dark.6',
+      },
+    },
+  },
 })
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
-      <MantineProvider theme={theme}>
+      <MantineProvider theme={theme} defaultColorScheme="dark">
         <App />
       </MantineProvider>
     </QueryClientProvider>

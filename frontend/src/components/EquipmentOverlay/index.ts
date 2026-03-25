@@ -1,0 +1,1 @@
+export { EquipmentOverlay } from './EquipmentOverlay';
