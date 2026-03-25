@@ -42,7 +42,8 @@ function EquipmentMarker({ equipment, position }: EquipmentMarkerProps) {
       case 'lift':
         return equipment.enabled ? '#8b5cf6' : '#6b7280';
       case 'pneumatic_brake':
-        return equipment.state === 'open' ? '#22c55e' : '#ef4444';
+        const brake = equipment as any;
+        return brake.state === 'open' ? '#22c55e' : '#ef4444';
       default:
         return '#6b7280';
     }
@@ -55,7 +56,8 @@ function EquipmentMarker({ equipment, position }: EquipmentMarkerProps) {
       case 'lift':
         return 'LIFT';
       case 'pneumatic_brake':
-        return equipment.state === 'open' ? 'BRAKE ○' : 'BRAKE ●';
+        const brake = equipment as any;
+        return brake.state === 'open' ? 'BRAKE ○' : 'BRAKE ●';
       default:
         return 'EQ';
     }

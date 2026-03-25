@@ -124,32 +124,44 @@ export interface EquipmentBase {
   start_s: number;
   end_s: number;
   equipment_type: string;
+  enabled?: boolean;
 }
 
 export interface LSMLaunch extends EquipmentBase {
   equipment_type: 'lsm_launch';
-  stator_count: number;
-  magnetic_field_strength: number;
-  max_force_n: number;
-  enabled: boolean;
+  stator_count?: number;
+  magnetic_field_strength?: number;
+  max_force_n?: number;
+  launch_velocity_mps?: number;
 }
 
 export interface Lift extends EquipmentBase {
   equipment_type: 'lift';
-  lift_speed_mps: number;
-  max_pull_force_n: number;
-  engagement_point_s: number;
-  release_point_s: number;
-  enabled: boolean;
+  chain_speed_mps?: number;
+  max_pull_force_n?: number;
+  engagement_point_s?: number;
+  release_point_s?: number;
 }
 
 export interface PneumaticBrake extends EquipmentBase {
   equipment_type: 'pneumatic_brake';
-  max_brake_force_n: number;
-  response_time_s: number;
-  air_pressure: number;
-  fail_safe_mode: 'normally_open' | 'normally_closed';
-  state: 'open' | 'closed' | 'emergency_stop';
+  max_brake_force_n?: number;
+  response_time_s?: number;
+  air_pressure?: number;
+  fail_safe_mode?: 'normally_open' | 'normally_closed';
+  state?: 'open' | 'closed' | 'emergency_stop';
 }
 
-export type Equipment = LSMLaunch | Lift | PneumaticBrake;
+export interface TrimBrake extends EquipmentBase {
+  equipment_type: 'trim_brake';
+  max_force_n?: number;
+  target_velocity_mps?: number;
+}
+
+export interface Booster extends EquipmentBase {
+  equipment_type: 'booster';
+  max_force_n?: number;
+  boost_duration_s?: number;
+}
+
+export type Equipment = LSMLaunch | Lift | PneumaticBrake | TrimBrake | Booster | EquipmentBase;
