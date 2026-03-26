@@ -14,7 +14,7 @@ class SamplePointResponse(BaseModel):
     normal: list[float]
     binormal: list[float]
     curvature: float
-    radius: float
+    radius: float | None  # Can be None/infinite when curvature is 0
     slope_deg: float
     bank_deg: float
 
@@ -104,6 +104,8 @@ async def get_path_sample(project_id: str, path_id: str, s: float = Query(...)):
 
     sample = min(path_data.samples, key=lambda sp: abs(sp.s - s))
 
+    import math
+    radius = sample.radius if sample.radius != float('inf') and not math.isinf(sample.radius) else None
     return SamplePointResponse(
         s=sample.s,
         position=list(sample.position),
@@ -111,7 +113,7 @@ async def get_path_sample(project_id: str, path_id: str, s: float = Query(...)):
         normal=list(sample.normal),
         binormal=list(sample.binormal),
         curvature=sample.curvature,
-        radius=sample.radius,
+        radius=radius,
         slope_deg=sample.slope_deg,
         bank_deg=sample.bank_deg
     )
@@ -133,20 +135,21 @@ async def get_interpolated_path(project_id: str, path_id: str):
     if not path_data or not path_data.samples:
         raise HTTPException(status_code=422, detail="Path has no geometry")
 
-    points = [
-        SamplePointResponse(
+    import math
+    points = []
+    for sample in path_data.samples:
+        radius = sample.radius if sample.radius != float('inf') and not math.isinf(sample.radius) else None
+        points.append(SamplePointResponse(
             s=sample.s,
             position=list(sample.position),
             tangent=list(sample.tangent),
             normal=list(sample.normal),
             binormal=list(sample.binormal),
             curvature=sample.curvature,
-            radius=sample.radius,
+            radius=radius,
             slope_deg=sample.slope_deg,
             bank_deg=sample.bank_deg
-        )
-        for sample in path_data.samples
-    ]
+        ))
 
     return InterpolatedPathResponse(
         path_id=path_id,

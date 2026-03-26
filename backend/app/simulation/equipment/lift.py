@@ -51,8 +51,12 @@ def compute_lift_force(
         state.engaged = False
         return 0.0
 
+    # Get engagement and release points, defaulting to start_s and end_s
+    engagement_point = lift.engagement_point_s if lift.engagement_point_s is not None else lift.start_s
+    release_point = lift.release_point_s if lift.release_point_s is not None else lift.end_s
+
     # Check if train is in the engagement zone (between engagement and release points)
-    in_engagement_zone = lift.engagement_point_s <= train_s <= lift.release_point_s
+    in_engagement_zone = engagement_point <= train_s <= release_point
 
     if not in_engagement_zone:
         state.engaged = False
@@ -109,7 +113,8 @@ def check_lift_release(
     Returns:
         True if train should be released from lift
     """
-    if train_s >= lift.release_point_s:
+    release_point = lift.release_point_s if lift.release_point_s is not None else lift.end_s
+    if train_s >= release_point:
         state.engaged = False
         state.engagement_progress = 0.0
         return True

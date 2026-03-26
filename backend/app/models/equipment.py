@@ -36,10 +36,10 @@ class Lift(BaseModel):
     path_id: str
     start_s: float
     end_s: float
-    lift_speed_mps: float
-    max_pull_force_n: float
-    engagement_point_s: float
-    release_point_s: float
+    lift_speed_mps: float = 5.0  # Default lift speed in m/s
+    max_pull_force_n: float = 5000.0  # Default max pull force in N
+    engagement_point_s: Optional[float] = None  # Defaults to start_s
+    release_point_s: Optional[float] = None  # Defaults to end_s
     enabled: bool = True
 
 

@@ -120,6 +120,10 @@ function App() {
       clearInterval(simulationInterval);
       setSimulationInterval(null);
     }
+    // Update simulation state to show stopped
+    if (simulationState) {
+      setSimulationState({ ...simulationState, running: false });
+    }
   };
 
   const handleReset = async () => {
@@ -171,7 +175,7 @@ function App() {
         { id: 'v1', length_m: 2.0, dry_mass_kg: 500.0, capacity: 4, passenger_mass_per_person_kg: 75 }
       ],
       trains: [
-        { id: 'train_1', vehicle_ids: ['v1'] }
+        { id: 'train_1', vehicle_ids: ['v1'], current_path_id: 'main_track', front_position_s: 5.0 }
       ],
       equipment: [
         {
@@ -335,7 +339,7 @@ function App() {
                 </Box>
               )}
 
-              {/* Simulation Panel */}
+              {/* Simulation info */}
               {editingMode === 'simulate' && simulationState && (
                 <SimulationPanel
                   simulationState={simulationState}

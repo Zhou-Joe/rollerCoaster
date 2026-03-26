@@ -8,7 +8,8 @@ import { EquipmentOverlay } from '../EquipmentOverlay';
 import { PointMarkers } from '../PointMarkers/PointMarkers';
 import { useProjectStore } from '../../state/projectStore';
 import { updateProject, getInterpolatedPath } from '../../api/client';
-import { Box, Text } from '@mantine/core';
+import { Box, Text, Button, ActionIcon, Tooltip } from '@mantine/core';
+import { IconRefresh } from '@tabler/icons-react';
 
 export function Editor3D() {
   const {
@@ -21,6 +22,8 @@ export function Editor3D() {
   } = useProjectStore();
 
   const [selectedPointId, setSelectedPointId] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const handlePointMove = useCallback(async (pointId: string, position: { x: number; y: number; z: number }) => {
     if (!currentProject?.id) return;
@@ -31,13 +34,19 @@ export function Editor3D() {
         : p
     );
 
-    // Optimistic update
+    // Optimistic update - only update local state during drag
     const updatedProject = { ...currentProject, points: updatedPoints };
     setCurrentProject(updatedProject);
+  }, [currentProject, setCurrentProject]);
 
-    // Send to backend
+  // Manual refresh function for track geometry
+  const handleRefreshTrack = useCallback(async () => {
+    if (!currentProject?.id) return;
+    
+    setIsRefreshing(true);
     try {
-      await updateProject(currentProject.id, { points: updatedPoints });
+      // Save current points to backend
+      await updateProject(currentProject.id, { points: currentProject.points });
 
       // Refresh interpolated paths
       for (const path of currentProject.paths) {
@@ -49,16 +58,19 @@ export function Editor3D() {
         }
       }
     } catch (e) {
-      console.error('Failed to update point:', e);
+      console.error('Failed to refresh track:', e);
+    } finally {
+      setIsRefreshing(false);
     }
-  }, [currentProject, setCurrentProject, setInterpolatedPath]);
+  }, [currentProject, setInterpolatedPath]);
 
   return (
     <Box
       style={{ width: '100%', height: '100%', position: 'relative' }}
       onClick={() => setSelectedPointId(null)}
     >
-      <Canvas shadows>
+      <Canvas shadows gl={{ antialias: true, alpha: false }} style={{ background: 'white' }}>
+        <color attach="background" args={['#ffffff']} />
         <PerspectiveCamera makeDefault position={[50, 50, 50]} fov={50} />
         <OrbitControls
           makeDefault
@@ -66,6 +78,7 @@ export function Editor3D() {
           maxPolarAngle={Math.PI / 2.1}
           enableDamping
           dampingFactor={0.05}
+          enabled={!isDragging}
         />
 
         {/* Lighting */}
@@ -118,6 +131,7 @@ export function Editor3D() {
               onSelectPoint={setSelectedPointId}
               onPointMove={handlePointMove}
               editingMode={editingMode === 'edit'}
+              onDragStateChange={setIsDragging}
             />
           )}
 
@@ -138,6 +152,7 @@ export function Editor3D() {
                 key={trainState.train_id}
                 trainState={trainState}
                 path={path}
+                project={currentProject ?? undefined}
               />
             );
           })}
@@ -145,7 +160,7 @@ export function Editor3D() {
 
         {/* Gizmo for orientation */}
         <GizmoHelper alignment="bottom-right" margin={[80, 80]}>
-          <GizmoViewport labelColor="white" axisHeadScale={1} />
+          <GizmoViewport labelColor="black" axisHeadScale={1} />
         </GizmoHelper>
       </Canvas>
 
@@ -175,6 +190,31 @@ export function Editor3D() {
           </Text>
         )}
       </Box>
+
+      {/* Refresh Track Button - shown in edit mode */}
+      {editingMode === 'edit' && (
+        <Box
+          style={{
+            position: 'absolute',
+            top: 10,
+            right: 10,
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <Tooltip label="Refresh track geometry after dragging points">
+            <Button
+              size="xs"
+              variant="filled"
+              color="blue"
+              leftSection={<IconRefresh size={14} />}
+              onClick={handleRefreshTrack}
+              loading={isRefreshing}
+            >
+              Refresh Track
+            </Button>
+          </Tooltip>
+        </Box>
+      )}
     </Box>
   );
 }

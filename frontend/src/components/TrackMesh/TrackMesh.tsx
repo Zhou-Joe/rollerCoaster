@@ -43,19 +43,20 @@ export function TrackMesh({ path, selected = false, color = '#4a90d9' }: TrackMe
       // Apply bank rotation around tangent axis
       const bankRad = THREE.MathUtils.degToRad(point.bank_deg || 0);
 
-      // The normal is lateral (toward center of curve), binormal is "up" from track
-      // After banking, these rotate around the tangent
+      // The binormal is HORIZONTAL (perpendicular to tangent and world-up)
+      // The normal is VERTICAL (pointing upward from the track plane)
+      // After banking, these rotate around the tangent together with the track
       const rotatedNormal = normal.clone().applyAxisAngle(tangent, bankRad);
       const rotatedBinormal = binormal.clone().applyAxisAngle(tangent, bankRad);
 
-      // Left rail: offset in -normal direction (away from curve center)
-      leftRailPoints.push(pos.clone().add(rotatedNormal.clone().multiplyScalar(-railOffset)));
+      // Left rail: offset in -binormal direction (horizontally to the left when looking forward)
+      leftRailPoints.push(pos.clone().add(rotatedBinormal.clone().multiplyScalar(-railOffset)));
 
-      // Right rail: offset in +normal direction (toward curve center)
-      rightRailPoints.push(pos.clone().add(rotatedNormal.clone().multiplyScalar(railOffset)));
+      // Right rail: offset in +binormal direction (horizontally to the right when looking forward)
+      rightRailPoints.push(pos.clone().add(rotatedBinormal.clone().multiplyScalar(railOffset)));
 
-      // Spine: below the track in the -binormal direction
-      spinePoints.push(pos.clone().add(rotatedBinormal.clone().multiplyScalar(-spineDrop)));
+      // Spine: below the track in the -normal direction (downward from track center)
+      spinePoints.push(pos.clone().add(rotatedNormal.clone().multiplyScalar(-spineDrop)));
     }
 
     // Create smooth curves
@@ -70,7 +71,7 @@ export function TrackMesh({ path, selected = false, color = '#4a90d9' }: TrackMe
     const spineGeometry = new THREE.TubeGeometry(spineCurve, segments, spineRadius, 12, false);
 
     // Create cross-brace data
-    const crossBraces: { position: THREE.Vector3; normal: THREE.Vector3; binormal: THREE.Vector3 }[] = [];
+    const crossBraces: { position: THREE.Vector3; normal: THREE.Vector3; binormal: THREE.Vector3; bank_deg: number }[] = [];
     const tieSpacing = 1.0;
 
     for (let s = 0; s < path.total_length; s += tieSpacing) {
@@ -80,6 +81,7 @@ export function TrackMesh({ path, selected = false, color = '#4a90d9' }: TrackMe
           position: toThreeVec(point.position),
           normal: toThreeVec(point.normal),
           binormal: toThreeVec(point.binormal),
+          bank_deg: point.bank_deg || 0,
         });
       }
     }
@@ -123,6 +125,7 @@ export function TrackMesh({ path, selected = false, color = '#4a90d9' }: TrackMe
           position={brace.position}
           normal={brace.normal}
           binormal={brace.binormal}
+          bank_deg={brace.bank_deg}
           gauge={trackStructure.railGauge}
           spineDrop={trackStructure.spineDrop}
         />
@@ -138,47 +141,85 @@ function CrossBrace({
   position,
   normal,
   binormal,
+  bank_deg,
   gauge,
   spineDrop,
 }: {
   position: THREE.Vector3;
   normal: THREE.Vector3;
   binormal: THREE.Vector3;
+  bank_deg: number;
   gauge: number;
   spineDrop: number;
 }) {
   const pipeRadius = 0.025;
-  const diagonalLength = Math.sqrt((gauge / 2) ** 2 + spineDrop ** 2);
-  const diagonalAngle = Math.atan2(spineDrop, gauge / 2);
 
-  // normal is lateral, binormal is up from track
-  // We'll place the cross brace at the track center
+  // binormal is HORIZONTAL (lateral, perpendicular to track direction)
+  // normal is VERTICAL (upward from track plane)
+  // Apply bank rotation to get the correct local frame
+  const bankRad = THREE.MathUtils.degToRad(bank_deg);
+  
+  // Get tangent by crossing normal and binormal
+  const tangent = new THREE.Vector3().crossVectors(normal, binormal).normalize();
+  
+  // Rotate normal and binormal around tangent by bank angle
+  const rotatedNormal = normal.clone().applyAxisAngle(tangent, bankRad);
+  const rotatedBinormal = binormal.clone().applyAxisAngle(tangent, bankRad);
+
+  // Calculate actual 3D positions of rails and spine
+  const leftRailPos = rotatedBinormal.clone().multiplyScalar(-gauge / 2);
+  const rightRailPos = rotatedBinormal.clone().multiplyScalar(gauge / 2);
+  const spinePos = rotatedNormal.clone().multiplyScalar(-spineDrop);
+
+  // Calculate diagonal lengths
+  const leftDiagonalLength = leftRailPos.clone().sub(spinePos).length();
+  const rightDiagonalLength = rightRailPos.clone().sub(spinePos).length();
+
+  // Helper function to create orientation for a cylinder between two points
+  const createCylinderOrientation = (start: THREE.Vector3, end: THREE.Vector3) => {
+    const direction = end.clone().sub(start).normalize();
+    const quaternion = new THREE.Quaternion();
+    quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
+    return quaternion;
+  };
+
+  // Calculate midpoints for diagonal positions
+  const leftDiagonalMid = leftRailPos.clone().add(spinePos).multiplyScalar(0.5);
+  const rightDiagonalMid = rightRailPos.clone().add(spinePos).multiplyScalar(0.5);
+
+  // Calculate the horizontal tie orientation (along binormal direction)
+  const horizontalTieQuaternion = new THREE.Quaternion();
+  horizontalTieQuaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), rotatedBinormal.clone().normalize());
 
   return (
     <group position={position}>
-      {/* Horizontal cross tie between rails - along normal axis */}
-      <mesh rotation={[0, 0, Math.PI / 2]} castShadow>
+      {/* Horizontal cross tie between rails - at the rail level */}
+      <mesh 
+        position={new THREE.Vector3(0, 0, 0)}
+        quaternion={horizontalTieQuaternion}
+        castShadow
+      >
         <cylinderGeometry args={[pipeRadius, pipeRadius, gauge, 8]} />
         <meshStandardMaterial color="#6b7280" metalness={0.6} roughness={0.4} />
       </mesh>
 
       {/* Left diagonal: left rail to spine */}
       <mesh
-        position={normal.clone().multiplyScalar(-gauge / 4).add(binormal.clone().multiplyScalar(-spineDrop / 2))}
-        rotation={[diagonalAngle, 0, 0]}
+        position={leftDiagonalMid}
+        quaternion={createCylinderOrientation(leftRailPos, spinePos)}
         castShadow
       >
-        <cylinderGeometry args={[pipeRadius, pipeRadius, diagonalLength, 8]} />
+        <cylinderGeometry args={[pipeRadius, pipeRadius, leftDiagonalLength, 8]} />
         <meshStandardMaterial color="#6b7280" metalness={0.6} roughness={0.4} />
       </mesh>
 
       {/* Right diagonal: right rail to spine */}
       <mesh
-        position={normal.clone().multiplyScalar(gauge / 4).add(binormal.clone().multiplyScalar(-spineDrop / 2))}
-        rotation={[-diagonalAngle, 0, 0]}
+        position={rightDiagonalMid}
+        quaternion={createCylinderOrientation(rightRailPos, spinePos)}
         castShadow
       >
-        <cylinderGeometry args={[pipeRadius, pipeRadius, diagonalLength, 8]} />
+        <cylinderGeometry args={[pipeRadius, pipeRadius, rightDiagonalLength, 8]} />
         <meshStandardMaterial color="#6b7280" metalness={0.6} roughness={0.4} />
       </mesh>
     </group>

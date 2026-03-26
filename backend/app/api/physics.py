@@ -142,20 +142,37 @@ async def step_simulation(project_id: str, request: StepRequest = None):
 
     result = data["simulator"].step(dt)
 
-    return {
-        "time_s": result.time_s,
-        "dt_s": result.dt_s,
-        "trains": [
-            {
-                "train_id": t.train_id,
-                "path_id": t.path_id,
-                "s_front_m": t.s_front_m,
-                "velocity_mps": t.velocity_mps,
-                "acceleration_mps2": t.acceleration_mps2
+    # Return full simulation state like get_simulation_state
+    trains = [
+        TrainStateResponse(
+            train_id=t.train_id,
+            path_id=t.path_id,
+            s_front_m=t.s_front_m,
+            s_rear_m=t.s_rear_m,
+            velocity_mps=t.velocity_mps,
+            acceleration_mps2=t.acceleration_mps2,
+            mass_kg=t.mass_kg,
+            forces={
+                "gravity_n": t.forces.gravity_tangent_n,
+                "drag_n": t.forces.drag_n,
+                "rolling_resistance_n": t.forces.rolling_resistance_n,
+                "total_n": t.forces.total_n
+            },
+            gforces={
+                "normal_g": t.gforces.normal_g,
+                "lateral_g": t.gforces.lateral_g,
+                "vertical_g": t.gforces.vertical_g,
+                "resultant_g": t.gforces.resultant_g
             }
-            for t in result.trains
-        ]
-    }
+        )
+        for t in result.trains
+    ]
+
+    return SimulationStateResponse(
+        time_s=result.time_s,
+        running=data["simulator"].running,
+        trains=trains
+    )
 
 
 @router.post("/projects/{project_id}/simulate/run")

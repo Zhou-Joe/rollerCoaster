@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { ThreeEvent } from '@react-three/fiber';
 import * as THREE from 'three';
 import { Html } from '@react-three/drei';
@@ -10,6 +10,7 @@ interface PointMarkersProps {
   onSelectPoint: (id: string | null) => void;
   onPointMove: (id: string, position: { x: number; y: number; z: number }) => void;
   editingMode: boolean;
+  onDragStateChange?: (isDragging: boolean) => void;
 }
 
 /**
@@ -31,11 +32,17 @@ export function PointMarkers({
   selectedPointId,
   onSelectPoint,
   onPointMove,
-  editingMode
+  editingMode,
+  onDragStateChange
 }: PointMarkersProps) {
   const [dragging, setDragging] = useState<string | null>(null);
   const [dragPlane] = useState(() => new THREE.Plane(new THREE.Vector3(0, 1, 0), 0));
   const [dragOffset] = useState(() => new THREE.Vector3());
+
+  // Notify parent when drag state changes
+  useEffect(() => {
+    onDragStateChange?.(dragging !== null);
+  }, [dragging, onDragStateChange]);
 
   const handlePointerDown = useCallback((e: ThreeEvent<PointerEvent>, pointId: string) => {
     if (!editingMode) return;
