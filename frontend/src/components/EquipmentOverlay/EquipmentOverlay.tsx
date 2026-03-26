@@ -1,6 +1,14 @@
 import { useMemo } from 'react';
 import { Text } from '@react-three/drei';
+import * as THREE from 'three';
 import type { Equipment, InterpolatedPath } from '../../types';
+
+/**
+ * Convert our coordinate system (x, y, z where z=up) to Three.js (x, y, z where y=up)
+ */
+function toThreePos(pos: [number, number, number]): THREE.Vector3 {
+  return new THREE.Vector3(pos[0], pos[2], pos[1]);
+}
 
 interface EquipmentOverlayProps {
   equipment: Equipment[];
@@ -18,11 +26,14 @@ export function EquipmentOverlay({ equipment, paths }: EquipmentOverlayProps) {
         const startPoint = path.points.find((p) => Math.abs(p.s - eq.start_s) < 1);
         if (!startPoint) return null;
 
+        // Convert position to Three.js coordinates
+        const threePos = toThreePos(startPoint.position);
+
         return (
           <EquipmentMarker
             key={eq.id}
             equipment={eq}
-            position={startPoint.position}
+            position={threePos}
           />
         );
       })}
@@ -32,7 +43,7 @@ export function EquipmentOverlay({ equipment, paths }: EquipmentOverlayProps) {
 
 interface EquipmentMarkerProps {
   equipment: Equipment;
-  position: [number, number, number];
+  position: THREE.Vector3;
 }
 
 function EquipmentMarker({ equipment, position }: EquipmentMarkerProps) {

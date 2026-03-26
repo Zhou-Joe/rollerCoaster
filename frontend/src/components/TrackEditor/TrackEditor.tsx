@@ -3,13 +3,15 @@ import {
   Paper, Text, Group, Button, Stack, NumberInput,
   Accordion, Badge, ActionIcon
 } from '@mantine/core';
-import { IconPlus, IconTrash } from '@tabler/icons-react';
+import { IconPlus, IconTrash, IconEdit } from '@tabler/icons-react';
 import { useProjectStore } from '../../state/projectStore';
-import { updateProject } from '../../api/client';
+import { updateProject, getInterpolatedPath } from '../../api/client';
 
 export function TrackEditor() {
-  const { currentProject, simulationState, interpolatedPaths } = useProjectStore();
-  const [newPoint, setNewPoint] = useState({ x: 0, y: 0, z: 0, bank_deg: 0 });
+  const { currentProject, simulationState, interpolatedPaths, setCurrentProject, setInterpolatedPath } = useProjectStore();
+  const [newPoint, setNewPoint] = useState({ x: 0, y: 0, z: 5, bank_deg: 0 });
+  const [editingPointId, setEditingPointId] = useState<string | null>(null);
+  const [editValues, setEditValues] = useState({ x: 0, y: 0, z: 0, bank_deg: 0 });
 
   if (!currentProject) {
     return (
@@ -18,6 +20,17 @@ export function TrackEditor() {
       </Paper>
     );
   }
+
+  const refreshPaths = async (projectId: string) => {
+    for (const path of currentProject.paths) {
+      try {
+        const interpolated = await getInterpolatedPath(projectId, path.id);
+        setInterpolatedPath(path.id, interpolated);
+      } catch (e) {
+        console.error('Failed to refresh path:', path.id, e);
+      }
+    }
+  };
 
   const handleAddPoint = async () => {
     if (!currentProject.id) return;
@@ -30,10 +43,10 @@ export function TrackEditor() {
         bank_deg: newPoint.bank_deg,
         editable: true
       };
-      await updateProject(currentProject.id, {
-        points: [...currentProject.points, newPointData]
-      });
-      window.location.reload();
+      const updatedPoints = [...currentProject.points, newPointData];
+      await updateProject(currentProject.id, { points: updatedPoints });
+      setCurrentProject({ ...currentProject, points: updatedPoints });
+      await refreshPaths(currentProject.id);
     } catch (e) {
       console.error('Failed to add point:', e);
     }
@@ -43,7 +56,6 @@ export function TrackEditor() {
     if (!currentProject.id) return;
     try {
       const newPoints = currentProject.points.filter(p => p.id !== pointId);
-      // Also update paths to remove the deleted point
       const newPaths = currentProject.paths.map(path => ({
         ...path,
         point_ids: path.point_ids.filter(id => id !== pointId)
@@ -53,9 +65,41 @@ export function TrackEditor() {
         points: newPoints,
         paths: newPaths
       });
-      window.location.reload();
+      setCurrentProject({ ...currentProject, points: newPoints, paths: newPaths });
+      await refreshPaths(currentProject.id);
     } catch (e) {
       console.error('Failed to delete point:', e);
+    }
+  };
+
+  const handleStartEdit = (point: typeof currentProject.points[0]) => {
+    setEditingPointId(point.id);
+    setEditValues({
+      x: point.x,
+      y: point.y,
+      z: point.z,
+      bank_deg: point.bank_deg || 0
+    });
+  };
+
+  const handleCancelEdit = () => {
+    setEditingPointId(null);
+  };
+
+  const handleSaveEdit = async (pointId: string) => {
+    if (!currentProject.id) return;
+    try {
+      const updatedPoints = currentProject.points.map(p =>
+        p.id === pointId
+          ? { ...p, x: editValues.x, y: editValues.y, z: editValues.z, bank_deg: editValues.bank_deg }
+          : p
+      );
+      await updateProject(currentProject.id, { points: updatedPoints });
+      setCurrentProject({ ...currentProject, points: updatedPoints });
+      setEditingPointId(null);
+      await refreshPaths(currentProject.id);
+    } catch (e) {
+      console.error('Failed to update point:', e);
     }
   };
 
@@ -68,10 +112,10 @@ export function TrackEditor() {
         name: 'Main Track',
         point_ids: pointIds
       };
-      await updateProject(currentProject.id, {
-        paths: [...currentProject.paths, newPath]
-      });
-      window.location.reload();
+      const updatedPaths = [...currentProject.paths, newPath];
+      await updateProject(currentProject.id, { paths: updatedPaths });
+      setCurrentProject({ ...currentProject, paths: updatedPaths });
+      await refreshPaths(currentProject.id);
     } catch (e) {
       console.error('Failed to create path:', e);
     }
@@ -82,7 +126,7 @@ export function TrackEditor() {
     try {
       const newPaths = currentProject.paths.filter(p => p.id !== pathId);
       await updateProject(currentProject.id, { paths: newPaths });
-      window.location.reload();
+      setCurrentProject({ ...currentProject, paths: newPaths });
     } catch (e) {
       console.error('Failed to delete path:', e);
     }
@@ -95,10 +139,9 @@ export function TrackEditor() {
         id: `train_${Date.now()}`,
         vehicle_ids: currentProject.vehicles.map(v => v.id)
       };
-      await updateProject(currentProject.id, {
-        trains: [...currentProject.trains, newTrain]
-      });
-      window.location.reload();
+      const updatedTrains = [...currentProject.trains, newTrain];
+      await updateProject(currentProject.id, { trains: updatedTrains });
+      setCurrentProject({ ...currentProject, trains: updatedTrains });
     } catch (e) {
       console.error('Failed to create train:', e);
     }
@@ -109,7 +152,7 @@ export function TrackEditor() {
     try {
       const newTrains = currentProject.trains.filter(t => t.id !== trainId);
       await updateProject(currentProject.id, { trains: newTrains });
-      window.location.reload();
+      setCurrentProject({ ...currentProject, trains: newTrains });
     } catch (e) {
       console.error('Failed to delete train:', e);
     }
@@ -149,6 +192,7 @@ export function TrackEditor() {
                     label="Z"
                     value={newPoint.z}
                     onChange={(v) => setNewPoint({ ...newPoint, z: Number(v) || 0 })}
+                    min={0}
                   />
                 </Group>
                 <Group grow mt="xs">
@@ -168,26 +212,85 @@ export function TrackEditor() {
 
               {/* Existing points list */}
               {currentProject.points.map((point, idx) => (
-                <Paper key={point.id} p="xs" withBorder style={{ background: '#222' }}>
-                  <Group justify="space-between">
-                    <Text size="xs" fw={500}>Point {idx + 1}</Text>
-                    <ActionIcon
-                      size="xs"
-                      variant="subtle"
-                      color="red"
-                      onClick={() => handleDeletePoint(point.id)}
-                    >
-                      <IconTrash size={12} />
-                    </ActionIcon>
-                  </Group>
-                  <Group gap="xs" mt="xs">
-                    <Text size="xs" c="dimmed">
-                      X: {point.x.toFixed(1)} Y: {point.y.toFixed(1)} Z: {point.z.toFixed(1)}
-                    </Text>
-                    {point.bank_deg !== 0 && (
-                      <Badge size="xs" variant="light">Bank: {point.bank_deg}°</Badge>
-                    )}
-                  </Group>
+                <Paper key={point.id} p="xs" withBorder style={{ background: editingPointId === point.id ? '#2a3a4a' : '#222' }}>
+                  {editingPointId === point.id ? (
+                    // Edit mode
+                    <Stack gap="xs">
+                      <Group justify="space-between">
+                        <Text size="xs" fw={600}>Editing Point {idx + 1}</Text>
+                        <Group gap="xs">
+                          <Button size="xs" variant="subtle" onClick={handleCancelEdit}>Cancel</Button>
+                          <Button size="xs" onClick={() => handleSaveEdit(point.id)}>Save</Button>
+                        </Group>
+                      </Group>
+                      <Group grow>
+                        <NumberInput
+                          size="xs"
+                          label="X"
+                          value={editValues.x}
+                          onChange={(v) => setEditValues({ ...editValues, x: Number(v) || 0 })}
+                          step={0.5}
+                        />
+                        <NumberInput
+                          size="xs"
+                          label="Y"
+                          value={editValues.y}
+                          onChange={(v) => setEditValues({ ...editValues, y: Number(v) || 0 })}
+                          step={0.5}
+                        />
+                        <NumberInput
+                          size="xs"
+                          label="Z"
+                          value={editValues.z}
+                          onChange={(v) => setEditValues({ ...editValues, z: Number(v) || 0 })}
+                          min={0}
+                          step={0.5}
+                        />
+                      </Group>
+                      <NumberInput
+                        size="xs"
+                        label="Bank Angle (°)"
+                        value={editValues.bank_deg}
+                        onChange={(v) => setEditValues({ ...editValues, bank_deg: Number(v) || 0 })}
+                        min={-90}
+                        max={90}
+                        step={5}
+                      />
+                    </Stack>
+                  ) : (
+                    // View mode
+                    <Group justify="space-between">
+                      <Group gap="xs">
+                        <Badge size="sm" variant="light">{idx + 1}</Badge>
+                        <Text size="xs">
+                          X: <strong>{point.x.toFixed(1)}</strong>
+                          Y: <strong>{point.y.toFixed(1)}</strong>
+                          Z: <strong>{point.z.toFixed(1)}</strong>
+                        </Text>
+                        {point.bank_deg !== 0 && (
+                          <Badge size="xs" color="grape">Bank: {point.bank_deg}°</Badge>
+                        )}
+                      </Group>
+                      <Group gap={4}>
+                        <ActionIcon
+                          size="xs"
+                          variant="subtle"
+                          color="blue"
+                          onClick={() => handleStartEdit(point)}
+                        >
+                          <IconEdit size={12} />
+                        </ActionIcon>
+                        <ActionIcon
+                          size="xs"
+                          variant="subtle"
+                          color="red"
+                          onClick={() => handleDeletePoint(point.id)}
+                        >
+                          <IconTrash size={12} />
+                        </ActionIcon>
+                      </Group>
+                    </Group>
+                  )}
                 </Paper>
               ))}
             </Stack>

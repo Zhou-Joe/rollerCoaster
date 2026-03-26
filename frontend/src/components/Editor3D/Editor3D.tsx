@@ -1,17 +1,63 @@
+import { useState, useCallback } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Grid, GizmoHelper, GizmoViewport, PerspectiveCamera } from '@react-three/drei';
 import { Suspense } from 'react';
 import { TrackMesh } from '../TrackMesh';
 import { TrainMesh } from '../TrainMesh';
 import { EquipmentOverlay } from '../EquipmentOverlay';
+import { PointMarkers } from '../PointMarkers/PointMarkers';
 import { useProjectStore } from '../../state/projectStore';
+import { updateProject, getInterpolatedPath } from '../../api/client';
 import { Box, Text } from '@mantine/core';
 
 export function Editor3D() {
-  const { currentProject, interpolatedPaths, simulationState } = useProjectStore();
+  const {
+    currentProject,
+    interpolatedPaths,
+    simulationState,
+    editingMode,
+    setCurrentProject,
+    setInterpolatedPath,
+  } = useProjectStore();
+
+  const [selectedPointId, setSelectedPointId] = useState<string | null>(null);
+
+  const handlePointMove = useCallback(async (pointId: string, position: { x: number; y: number; z: number }) => {
+    if (!currentProject?.id) return;
+
+    const updatedPoints = currentProject.points.map(p =>
+      p.id === pointId
+        ? { ...p, x: position.x, y: position.y, z: position.z }
+        : p
+    );
+
+    // Optimistic update
+    const updatedProject = { ...currentProject, points: updatedPoints };
+    setCurrentProject(updatedProject);
+
+    // Send to backend
+    try {
+      await updateProject(currentProject.id, { points: updatedPoints });
+
+      // Refresh interpolated paths
+      for (const path of currentProject.paths) {
+        try {
+          const interpolated = await getInterpolatedPath(currentProject.id, path.id);
+          setInterpolatedPath(path.id, interpolated);
+        } catch (e) {
+          console.error('Failed to refresh path:', path.id, e);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to update point:', e);
+    }
+  }, [currentProject, setCurrentProject, setInterpolatedPath]);
 
   return (
-    <Box style={{ width: '100%', height: '100%', position: 'relative' }}>
+    <Box
+      style={{ width: '100%', height: '100%', position: 'relative' }}
+      onClick={() => setSelectedPointId(null)}
+    >
       <Canvas shadows>
         <PerspectiveCamera makeDefault position={[50, 50, 50]} fov={50} />
         <OrbitControls
@@ -64,6 +110,17 @@ export function Editor3D() {
             );
           })}
 
+          {/* Point markers for editing */}
+          {currentProject && (
+            <PointMarkers
+              points={currentProject.points}
+              selectedPointId={selectedPointId}
+              onSelectPoint={setSelectedPointId}
+              onPointMove={handlePointMove}
+              editingMode={editingMode === 'edit'}
+            />
+          )}
+
           {/* Equipment overlays */}
           {currentProject?.equipment && currentProject.equipment.length > 0 && (
             <EquipmentOverlay
@@ -102,6 +159,7 @@ export function Editor3D() {
           background: 'rgba(0, 0, 0, 0.6)',
           borderRadius: 4,
         }}
+        onClick={(e) => e.stopPropagation()}
       >
         <Text size="xs" c="gray.4">
           {currentProject?.metadata?.name || 'No project loaded'}
@@ -111,6 +169,11 @@ export function Editor3D() {
           Trains: {simulationState?.trains.length || 0} |
           Equipment: {currentProject?.equipment?.length || 0}
         </Text>
+        {editingMode === 'edit' && (
+          <Text size="xs" c="blue.4" mt={4}>
+            Edit Mode: Click and drag points to modify track
+          </Text>
+        )}
       </Box>
     </Box>
   );

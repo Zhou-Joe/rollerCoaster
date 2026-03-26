@@ -9,6 +9,13 @@ interface TrainMeshProps {
   selected?: boolean;
 }
 
+/**
+ * Convert our coordinate system (x, y, z where z=up) to Three.js (x, y, z where y=up)
+ */
+function toThreeVec(v: [number, number, number]): THREE.Vector3 {
+  return new THREE.Vector3(v[0], v[2], v[1]);
+}
+
 export function TrainMesh({ trainState, path, color = '#dc2626', selected = false }: TrainMeshProps) {
   const groupRef = useRef<THREE.Group>(null);
 
@@ -27,19 +34,19 @@ export function TrainMesh({ trainState, path, color = '#dc2626', selected = fals
       };
     }
 
-    const pos = new THREE.Vector3(...frontPoint.position);
+    // Convert position to Three.js coordinates
+    const pos = toThreeVec(frontPoint.position);
 
-    // Create rotation matrix from Frenet-Serret frame
-    const tangent = new THREE.Vector3(...frontPoint.tangent);
-    const normal = new THREE.Vector3(...frontPoint.normal);
-    const binormal = new THREE.Vector3(...frontPoint.binormal);
+    // Create rotation matrix from Frenet-Serret frame (also convert)
+    const tangent = toThreeVec(frontPoint.tangent);
+    const normal = toThreeVec(frontPoint.normal);
+    const binormal = toThreeVec(frontPoint.binormal);
 
     // The train's forward direction is along the tangent
-    // We need to rotate the train to align with the track
     const matrix = new THREE.Matrix4().makeBasis(
-      tangent, // X: forward
-      binormal, // Y: up (perpendicular to track surface)
-      normal // Z: right (towards center of curvature)
+      tangent,   // X: forward
+      binormal,  // Y: up (perpendicular to track surface)
+      normal     // Z: right (towards center of curvature)
     );
 
     const quat = new THREE.Quaternion().setFromRotationMatrix(matrix);
@@ -79,12 +86,6 @@ export function TrainMesh({ trainState, path, color = '#dc2626', selected = fals
           <meshBasicMaterial color="#22c55e" />
         </mesh>
       )}
-
-      {/* Train ID label */}
-      <mesh position={[0, 1.5, 0]}>
-        <planeGeometry args={[2, 0.5]} />
-        <meshBasicMaterial color="#ffffff" />
-      </mesh>
     </group>
   );
 }
@@ -93,17 +94,17 @@ function WheelSet({ position }: { position: [number, number, number] }) {
   return (
     <group position={position}>
       {/* Left wheel */}
-      <mesh position={[0, 0, 0.7]} rotation={[0, 0, Math.PI / 2]} castShadow>
+      <mesh position={[0, 0, 0.7]} rotation={[Math.PI / 2, 0, 0]} castShadow>
         <cylinderGeometry args={[0.25, 0.25, 0.15, 16]} />
         <meshStandardMaterial color="#1f2937" metalness={0.8} roughness={0.2} />
       </mesh>
       {/* Right wheel */}
-      <mesh position={[0, 0, -0.7]} rotation={[0, 0, Math.PI / 2]} castShadow>
+      <mesh position={[0, 0, -0.7]} rotation={[Math.PI / 2, 0, 0]} castShadow>
         <cylinderGeometry args={[0.25, 0.25, 0.15, 16]} />
         <meshStandardMaterial color="#1f2937" metalness={0.8} roughness={0.2} />
       </mesh>
       {/* Axle */}
-      <mesh rotation={[0, 0, Math.PI / 2]} castShadow>
+      <mesh rotation={[Math.PI / 2, 0, 0]} castShadow>
         <cylinderGeometry args={[0.08, 0.08, 1.4, 8]} />
         <meshStandardMaterial color="#374151" metalness={0.6} roughness={0.3} />
       </mesh>
