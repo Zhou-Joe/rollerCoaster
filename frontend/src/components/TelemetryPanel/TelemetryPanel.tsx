@@ -300,8 +300,9 @@ function GForceBar({ label, value }: GForceBarProps) {
 }
 
 function getSpeedColor(velocity: number): string {
-  if (velocity < 5) return 'green';
-  if (velocity < 15) return 'yellow';
-  if (velocity < 25) return 'orange';
+  const absVelocity = Math.abs(velocity);
+  if (absVelocity < 5) return 'green';
+  if (absVelocity < 15) return 'yellow';
+  if (absVelocity < 25) return 'orange';
   return 'red';
 }

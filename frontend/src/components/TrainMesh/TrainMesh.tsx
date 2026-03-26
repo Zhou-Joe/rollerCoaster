@@ -1,6 +1,6 @@
 import { useMemo, useRef } from 'react';
 import * as THREE from 'three';
-import type { TrainPhysicsState, InterpolatedPath, Vehicle, Train, Project } from '../../types';
+import type { TrainPhysicsState, InterpolatedPath, Vehicle, Project } from '../../types';
 
 interface TrainMeshProps {
   trainState: TrainPhysicsState;
@@ -74,46 +74,78 @@ export function TrainMesh({ trainState, path, project, color = '#dc2626', select
   }, [project, trainDef]);
 
   const vehiclePositions = useMemo(() => {
-    const trainLength = trainState.s_front_m - trainState.s_rear_m;
-    
     if (vehicles.length > 0) {
-      const totalVehicleLength = vehicles.reduce((sum, v) => sum + v.length_m, 0);
-      const gapSize = vehicles.length > 1 ? (trainLength - totalVehicleLength) / (vehicles.length - 1) : 0;
-      
-      const positions: { vehicle: Vehicle; sCenter: number }[] = [];
-      let currentS = trainState.s_front_m;
-      
+      // Calculate actual physical train length with coupling gaps
+      const COUPLING_GAP = 0.5;
+
+      const positions: { vehicle: Vehicle; sCenter: number; sFront: number; sRear: number }[] = [];
+      // Start from front and place each vehicle
+      let currentFrontS = trainState.s_front_m;
+
       for (let i = 0; i < vehicles.length; i++) {
         const vehicle = vehicles[i];
-        const vehicleCenter = currentS - vehicle.length_m / 2;
-        positions.push({ vehicle, sCenter: vehicleCenter });
-        currentS -= vehicle.length_m + gapSize;
+        // Vehicle center is behind the front by half its length
+        const vehicleCenterS = currentFrontS - vehicle.length_m / 2;
+        const vehicleRearS = currentFrontS - vehicle.length_m;
+        positions.push({ vehicle, sCenter: vehicleCenterS, sFront: currentFrontS, sRear: vehicleRearS });
+
+        // Move to the back of this vehicle for the next one
+        currentFrontS -= vehicle.length_m + COUPLING_GAP;
       }
       return positions;
     }
-    
+
+    const trainLength = trainState.s_front_m - trainState.s_rear_m;
     return [{
       vehicle: { id: 'default', length_m: trainLength, dry_mass_kg: 1000, capacity: 4 },
       sCenter: (trainState.s_front_m + trainState.s_rear_m) / 2,
+      sFront: trainState.s_front_m,
+      sRear: trainState.s_rear_m,
     }];
-  }, [vehicles, trainState]);
+  }, [vehicles, trainState, trainDef]);
 
   if (vehiclePositions.length === 0) return null;
 
   return (
     <group ref={groupRef}>
-      {vehiclePositions.map((vp, idx) => (
-        <VehicleMesh
-          key={vp.vehicle.id + idx}
-          vehicle={vp.vehicle}
-          sCenter={vp.sCenter}
-          path={path}
-          color={color}
-          selected={selected}
-          isLeading={idx === 0}
-          velocity={trainState.velocity_mps}
-        />
-      ))}
+      {vehiclePositions.map((vp, idx) => {
+        // Compute per-vehicle physics based on vehicle center position
+        const centerPoint = findPointAtS(path, vp.sCenter);
+
+        // Velocity at vehicle center (same magnitude, direction follows track tangent)
+        const vehicleVelocity = trainState.velocity_mps;
+
+        // Compute vehicle-specific acceleration due to slope at vehicle center
+        // a = g * sin(slope) where slope is at the vehicle's center
+        const vehicleSlopeDeg = centerPoint?.slope_deg ?? 0;
+        const GRAVITY = 9.81;
+        const slopeAccel = GRAVITY * Math.sin(THREE.MathUtils.degToRad(vehicleSlopeDeg));
+
+        // Compute centripetal acceleration at vehicle center due to curvature
+        // a_c = v^2 * curvature
+        // const curvature = centerPoint?.curvature ?? 0;
+        // const centripetalAccel = trainState.velocity_mps * trainState.velocity_mps * curvature;
+
+        // Total vehicle acceleration
+        const vehicleAccel = slopeAccel; // Simplified - actual physics would include drag, etc.
+
+        return (
+          <VehicleMesh
+            key={vp.vehicle.id + idx}
+            vehicle={vp.vehicle}
+            sCenter={vp.sCenter}
+            sFront={vp.sFront}
+            sRear={vp.sRear}
+            path={path}
+            color={color}
+            selected={selected}
+            isLeading={idx === 0}
+            velocity={vehicleVelocity}
+            acceleration={vehicleAccel}
+            slopeDeg={vehicleSlopeDeg}
+          />
+        );
+      })}
     </group>
   );
 }
@@ -121,11 +153,15 @@ export function TrainMesh({ trainState, path, project, color = '#dc2626', select
 interface VehicleMeshProps {
   vehicle: Vehicle;
   sCenter: number;
+  sFront: number;
+  sRear: number;
   path: InterpolatedPath;
   color: string;
   selected: boolean;
   isLeading: boolean;
   velocity: number;
+  acceleration: number;
+  slopeDeg: number;
 }
 
 function VehicleMesh({ vehicle, sCenter, path, color, selected, isLeading, velocity }: VehicleMeshProps) {

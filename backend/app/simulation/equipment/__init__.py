@@ -1,7 +1,7 @@
 """Equipment physics simulation"""
 
 from .lsm import compute_lsm_force, create_lsm_state, LSMState
-from .lift import compute_lift_force, create_lift_state, LiftState
+from .lift import compute_lift_effect, create_lift_state, LiftState
 from .pneumatic_brake import (
     compute_pneumatic_brake_force,
     create_pneumatic_brake_state,
@@ -19,7 +19,7 @@ __all__ = [
     "create_lsm_state",
     "LSMState",
     # Lift
-    "compute_lift_force",
+    "compute_lift_effect",
     "create_lift_state",
     "LiftState",
     # Pneumatic Brake

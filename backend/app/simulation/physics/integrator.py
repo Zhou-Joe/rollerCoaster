@@ -90,7 +90,10 @@ class PhysicsSimulator:
             acceleration_mps2=0.0,
             mass_kg=mass,
             forces=ForceComponents(),
-            gforces=GForceComponents()
+            gforces=GForceComponents(),
+            kinetic_energy_j=0.0,
+            potential_energy_j=0.0,
+            total_energy_j=0.0
         )
 
     def step(self, dt: Optional[float] = None) -> PhysicsStepResult:
@@ -137,16 +140,75 @@ class PhysicsSimulator:
             # Train not on valid geometry - skip
             return
 
-        # Compute equipment force
+        # Compute equipment force and any velocity override (e.g., from lift)
         equipment_force_n = 0.0
+        lift_velocity_override = None
         if self.equipment_manager:
-            equipment_force_n = self.equipment_manager.compute_equipment_force(
+            equipment_force_n, lift_velocity_override = self.equipment_manager.compute_equipment_force(
                 train_path_id=state.path_id,
                 train_s=state.s_front_m,
                 train_velocity_mps=state.velocity_mps,
                 train_mass_kg=state.mass_kg,
                 dt=dt
             )
+
+        # If lift is engaged, it overrides velocity directly
+        if lift_velocity_override is not None:
+            new_velocity = lift_velocity_override
+            # Position update uses lift speed
+            new_s_front = state.s_front_m + new_velocity * dt
+
+            # Get path length for boundary checking
+            try:
+                path_data = self.geometry_cache.get_path(state.path_id)
+                max_s = path_data.total_length
+            except (ValueError, KeyError):
+                max_s = float('inf')
+
+            # Clamp to path bounds
+            if new_s_front > max_s:
+                new_s_front = max_s
+                new_velocity = 0.0
+            elif new_s_front < 0:
+                new_s_front = 0.0
+                new_velocity = 0.0
+
+            # Compute g-forces at new position
+            gforces = compute_gforces(
+                velocity_mps=new_velocity,
+                curvature_per_m=sample.curvature,
+                slope_deg=sample.slope_deg,
+                bank_deg=sample.bank_deg,
+                gravity_mps2=settings.gravity_mps2
+            )
+
+            # Energy while on lift
+            height_m = sample.position[2] if hasattr(sample, 'position') and sample.position else 0.0
+            kinetic_energy = 0.5 * state.mass_kg * new_velocity * new_velocity
+            potential_energy = state.mass_kg * settings.gravity_mps2 * height_m
+
+            # Update state
+            state.velocity_mps = new_velocity
+            state.acceleration_mps2 = 0.0  # On lift, no relative acceleration
+            state.s_front_m = new_s_front
+            state.s_rear_m = max(0.0, new_s_front - compute_train_length(
+                next(t for t in self.project.trains if t.id == state.train_id),
+                list(self.vehicle_map.values())
+            ))
+            state.forces = ForceComponents(
+                gravity_tangent_n=0.0,
+                drag_n=0.0,
+                rolling_resistance_n=0.0,
+                equipment_n=0.0,
+                total_n=0.0
+            )
+            state.gforces = gforces
+            state.kinetic_energy_j = kinetic_energy
+            state.potential_energy_j = potential_energy
+            state.total_energy_j = kinetic_energy + potential_energy
+
+            # Skip normal physics - lift controls everything
+            return
 
         # Compute forces
         forces = compute_forces(
@@ -164,28 +226,30 @@ class PhysicsSimulator:
         # Compute acceleration: F = ma => a = F/m
         acceleration = forces.total_n / state.mass_kg
 
-        # Update velocity (with simple bounds checking)
+        # Update velocity - allow negative velocity for rollback
         new_velocity = state.velocity_mps + acceleration * dt
 
-        # Don't allow negative velocity (train can't go backwards)
+        # Only clamp to zero if trying to reverse at boundaries
+        # Allow rollback on slopes when gravity pulls backward
         if new_velocity < 0:
-            new_velocity = 0.0
-            acceleration = 0.0
+            # Check if we're at the start of the path
+            if state.s_front_m <= 0.1:
+                new_velocity = 0.0
+                acceleration = 0.0
+            # Otherwise allow negative velocity (rollback)
 
-        # Update position
+        # Update position - handle negative velocity (backward movement)
         new_s_front = state.s_front_m + new_velocity * dt
 
-        # Get path length for boundary checking
+        # Clamp to path bounds
         try:
             path_data = self.geometry_cache.get_path(state.path_id)
             max_s = path_data.total_length
         except (ValueError, KeyError):
             max_s = float('inf')
 
-        # Clamp to path bounds (train stops at end of path for now)
-        if new_s_front > max_s:
-            new_s_front = max_s
-            new_velocity = 0.0
+        # Check for junction/switch at path boundary
+        new_s_front = self._check_junction_transition(state, new_s_front, max_s)
 
         # Compute g-forces
         gforces = compute_gforces(
@@ -195,6 +259,12 @@ class PhysicsSimulator:
             bank_deg=sample.bank_deg,
             gravity_mps2=settings.gravity_mps2
         )
+
+        # Compute energy components
+        # Get height at current position (position is [x, y, z] where z=up)
+        height_m = sample.position[2] if hasattr(sample, 'position') and sample.position else 0.0
+        kinetic_energy = 0.5 * state.mass_kg * new_velocity * new_velocity
+        potential_energy = state.mass_kg * settings.gravity_mps2 * height_m
 
         # Update state
         state.velocity_mps = new_velocity
@@ -206,6 +276,9 @@ class PhysicsSimulator:
         ))
         state.forces = forces
         state.gforces = gforces
+        state.kinetic_energy_j = kinetic_energy
+        state.potential_energy_j = potential_energy
+        state.total_energy_j = kinetic_energy + potential_energy
 
     def run(self, duration_s: float, dt: Optional[float] = None) -> List[PhysicsStepResult]:
         """
@@ -230,6 +303,45 @@ class PhysicsSimulator:
             elapsed += dt
 
         return results
+
+    def _check_junction_transition(self, state: TrainPhysicsState, new_s_front: float, max_s: float) -> float:
+        """
+        Check if train has reached a junction and handle path transition.
+
+        Returns the adjusted position (new_s_front or offset into new path).
+        """
+        # Check if we've passed the end of the current path
+        if new_s_front >= max_s:
+            # Look for a junction at the end of this path
+            for junction in self.project.junctions:
+                if junction.incoming_path_id == state.path_id:
+                    # Check if there's a track switch controlling this junction
+                    switch_alignment = None
+                    for equip_dict in self.project.equipment:
+                        if equip_dict.get('equipment_type') == 'track_switch':
+                            if equip_dict.get('junction_id') == junction.id or \
+                               equip_dict.get('incoming_path_id') == state.path_id:
+                                switch_alignment = equip_dict.get('current_alignment')
+                                break
+
+                    # Determine which outgoing path to take
+                    outgoing_paths = junction.outgoing_path_ids
+                    if not outgoing_paths:
+                        # No outgoing paths, stop at boundary
+                        return max_s
+
+                    # Use switch alignment if available, otherwise take first path
+                    selected_path = switch_alignment if switch_alignment and switch_alignment in outgoing_paths else outgoing_paths[0]
+
+                    # Transition to new path
+                    overshoot = new_s_front - max_s
+                    state.path_id = selected_path
+                    return overshoot
+
+            # No junction found, stop at boundary
+            return max_s
+
+        return new_s_front
 
     def reset(self) -> None:
         """Reset simulation to initial state."""

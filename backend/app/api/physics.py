@@ -21,6 +21,7 @@ class TrainStateResponse(BaseModel):
     mass_kg: float
     forces: dict
     gforces: dict
+    energy: dict
 
 
 class SimulationStateResponse(BaseModel):
@@ -31,6 +32,7 @@ class SimulationStateResponse(BaseModel):
 
 class StepRequest(BaseModel):
     dt: Optional[float] = None
+    steps: Optional[int] = None
 
 
 class SetVelocityRequest(BaseModel):
@@ -40,6 +42,11 @@ class SetVelocityRequest(BaseModel):
 class SetPositionRequest(BaseModel):
     path_id: str
     s: float
+
+
+class SetSwitchRequest(BaseModel):
+    switch_id: str
+    alignment: str
 
 
 def _get_project(project_id: str):
@@ -122,6 +129,11 @@ async def get_simulation_state(project_id: str):
                 "lateral_g": t.gforces.lateral_g,
                 "vertical_g": t.gforces.vertical_g,
                 "resultant_g": t.gforces.resultant_g
+            },
+            energy={
+                "kinetic_j": t.kinetic_energy_j,
+                "potential_j": t.potential_energy_j,
+                "total_j": t.total_energy_j
             }
         )
         for t in state.trains
@@ -139,8 +151,12 @@ async def step_simulation(project_id: str, request: StepRequest = None):
     """Advance simulation by one or more steps."""
     data = _get_or_create_simulator(project_id)
     dt = request.dt if request else None
+    steps = request.steps if request and request.steps else 1
 
-    result = data["simulator"].step(dt)
+    # Execute multiple steps
+    result = None
+    for _ in range(steps):
+        result = data["simulator"].step(dt)
 
     # Return full simulation state like get_simulation_state
     trains = [
@@ -163,6 +179,11 @@ async def step_simulation(project_id: str, request: StepRequest = None):
                 "lateral_g": t.gforces.lateral_g,
                 "vertical_g": t.gforces.vertical_g,
                 "resultant_g": t.gforces.resultant_g
+            },
+            energy={
+                "kinetic_j": t.kinetic_energy_j,
+                "potential_j": t.potential_energy_j,
+                "total_j": t.total_energy_j
             }
         )
         for t in result.trains
@@ -209,3 +230,21 @@ async def set_train_position(project_id: str, train_id: str, request: SetPositio
     data = _get_or_create_simulator(project_id)
     data["simulator"].set_train_position(train_id, request.path_id, request.s)
     return {"status": "ok", "train_id": train_id, "path_id": request.path_id, "s": request.s}
+
+
+@router.post("/projects/{project_id}/switches/{switch_id}/alignment")
+async def set_switch_alignment(project_id: str, switch_id: str, request: SetSwitchRequest):
+    """Set a switch's alignment."""
+    project = _get_project(project_id)
+
+    # Find and update the switch equipment
+    for i, equip in enumerate(project.equipment):
+        if equip.get("id") == switch_id and equip.get("equipment_type") == "track_switch":
+            project.equipment[i]["current_alignment"] = request.alignment
+            return {
+                "status": "ok",
+                "switch_id": switch_id,
+                "alignment": request.alignment
+            }
+
+    raise HTTPException(status_code=404, detail="Switch not found")

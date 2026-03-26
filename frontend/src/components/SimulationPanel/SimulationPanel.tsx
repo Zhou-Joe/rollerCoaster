@@ -19,6 +19,9 @@ interface HistoryPoint {
   ay: number;
   az: number;
   aTotal: number;
+  kineticJ: number;
+  potentialJ: number;
+  totalJ: number;
 }
 
 const MAX_HISTORY_POINTS = 200;
@@ -90,7 +93,6 @@ function TrainCard({ train, path, history }: {
     z: tangentAccel.z + centripetalAccel.z,
   };
 
-  const totalVelocity = Math.sqrt(worldVelocity.x**2 + worldVelocity.y**2 + worldVelocity.z**2);
   const totalAccel = Math.sqrt(worldAccel.x**2 + worldAccel.y**2 + worldAccel.z**2);
 
   // Position
@@ -108,13 +110,13 @@ function TrainCard({ train, path, history }: {
           <Text size="xs" c="gray.5" style={{ width: '25%' }}>Vx</Text>
           <Text size="xs" c="gray.5" style={{ width: '25%' }}>Vy</Text>
           <Text size="xs" c="gray.5" style={{ width: '25%' }}>Vz</Text>
-          <Text size="xs" c="gray.5" style={{ width: '25%', textAlign: 'right' }}>|V|</Text>
+          <Text size="xs" c="gray.5" style={{ width: '25%', textAlign: 'right' }}>V</Text>
         </Box>
         <Box style={{ display: 'flex', justifyContent: 'space-between' }}>
           <Text size="xs" style={{ width: '25%', color: getSpeedColor(worldVelocity.x), fontFamily: 'monospace' }}>{worldVelocity.x.toFixed(2)}</Text>
           <Text size="xs" style={{ width: '25%', color: getSpeedColor(worldVelocity.y), fontFamily: 'monospace' }}>{worldVelocity.y.toFixed(2)}</Text>
           <Text size="xs" style={{ width: '25%', color: getSpeedColor(worldVelocity.z), fontFamily: 'monospace' }}>{worldVelocity.z.toFixed(2)}</Text>
-          <Text size="xs" style={{ width: '25%', color: getSpeedColor(totalVelocity), fontFamily: 'monospace', fontWeight: 600, textAlign: 'right' }}>{totalVelocity.toFixed(2)}</Text>
+          <Text size="xs" style={{ width: '25%', color: train.velocity_mps >= 0 ? '#88ff88' : '#ff8888', fontFamily: 'monospace', fontWeight: 600, textAlign: 'right' }}>{train.velocity_mps.toFixed(2)}</Text>
         </Box>
       </Box>
 
@@ -152,6 +154,27 @@ function TrainCard({ train, path, history }: {
         </Box>
       </Box>
 
+      {/* Energy Table */}
+      <Text size="xs" c="gray.4" mb={4}>Energy (kJ)</Text>
+      <Box style={{ fontSize: '11px' }} mb="xs">
+        <Box style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #444', paddingBottom: 2, marginBottom: 2 }}>
+          <Text size="xs" c="gray.5" style={{ width: '33%' }}>Kinetic</Text>
+          <Text size="xs" c="gray.5" style={{ width: '33%' }}>Potential</Text>
+          <Text size="xs" c="gray.5" style={{ width: '33%', textAlign: 'right' }}>Total</Text>
+        </Box>
+        <Box style={{ display: 'flex', justifyContent: 'space-between' }}>
+          <Text size="xs" style={{ width: '33%', color: '#69db7c', fontFamily: 'monospace' }}>
+            {((train.energy?.kinetic_j ?? 0) / 1000).toFixed(2)}
+          </Text>
+          <Text size="xs" style={{ width: '33%', color: '#74c0fc', fontFamily: 'monospace' }}>
+            {((train.energy?.potential_j ?? 0) / 1000).toFixed(2)}
+          </Text>
+          <Text size="xs" style={{ width: '33%', color: '#ffd43b', fontFamily: 'monospace', fontWeight: 600, textAlign: 'right' }}>
+            {((train.energy?.total_j ?? 0) / 1000).toFixed(2)}
+          </Text>
+        </Box>
+      </Box>
+
       <Divider my="xs" color="#444" />
 
       {/* G-Forces summary */}
@@ -169,6 +192,7 @@ function TrainCard({ train, path, history }: {
         <Tabs.List>
           <Tabs.Tab value="velocity" style={{ fontSize: '11px', padding: '4px 8px' }}>Velocity</Tabs.Tab>
           <Tabs.Tab value="accel" style={{ fontSize: '11px', padding: '4px 8px' }}>Acceleration</Tabs.Tab>
+          <Tabs.Tab value="energy" style={{ fontSize: '11px', padding: '4px 8px' }}>Energy</Tabs.Tab>
         </Tabs.List>
 
         <Tabs.Panel value="velocity" pt="xs">
@@ -176,17 +200,25 @@ function TrainCard({ train, path, history }: {
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={history} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-                <XAxis dataKey="time" tick={{ fontSize: 10, fill: '#888' }} stroke="#444" />
+                <XAxis
+                  dataKey="time"
+                  tick={{ fontSize: 10, fill: '#888' }}
+                  stroke="#444"
+                  tickFormatter={(value) => value.toFixed(1)}
+                  label={{ value: 'Time (s)', position: 'insideBottom', offset: -2, fontSize: 10, fill: '#888' }}
+                />
                 <YAxis tick={{ fontSize: 10, fill: '#888' }} stroke="#444" />
-                <Tooltip 
+                <Tooltip
                   contentStyle={{ background: '#2a2a2a', border: '1px solid #444', fontSize: 11 }}
                   labelStyle={{ color: '#fff' }}
+                  formatter={(value) => [(value as number).toFixed(3), '']}
+                  labelFormatter={(label) => `Time: ${(label as number).toFixed(2)}s`}
                 />
                 <Legend wrapperStyle={{ fontSize: 10 }} />
                 <Line type="monotone" dataKey="vx" stroke="#ff6b6b" dot={false} strokeWidth={1.5} name="Vx" />
                 <Line type="monotone" dataKey="vy" stroke="#69db7c" dot={false} strokeWidth={1.5} name="Vy" />
                 <Line type="monotone" dataKey="vz" stroke="#74c0fc" dot={false} strokeWidth={1.5} name="Vz" />
-                <Line type="monotone" dataKey="vTotal" stroke="#ffd43b" dot={false} strokeWidth={2} name="|V|" />
+                <Line type="monotone" dataKey="vTotal" stroke="#ffd43b" dot={false} strokeWidth={2} name="V" />
               </LineChart>
             </ResponsiveContainer>
           </Box>
@@ -197,17 +229,53 @@ function TrainCard({ train, path, history }: {
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={history} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-                <XAxis dataKey="time" tick={{ fontSize: 10, fill: '#888' }} stroke="#444" />
+                <XAxis
+                  dataKey="time"
+                  tick={{ fontSize: 10, fill: '#888' }}
+                  stroke="#444"
+                  tickFormatter={(value) => value.toFixed(1)}
+                  label={{ value: 'Time (s)', position: 'insideBottom', offset: -2, fontSize: 10, fill: '#888' }}
+                />
                 <YAxis tick={{ fontSize: 10, fill: '#888' }} stroke="#444" />
-                <Tooltip 
+                <Tooltip
                   contentStyle={{ background: '#2a2a2a', border: '1px solid #444', fontSize: 11 }}
                   labelStyle={{ color: '#fff' }}
+                  formatter={(value) => [(value as number).toFixed(3), '']}
+                  labelFormatter={(label) => `Time: ${(label as number).toFixed(2)}s`}
                 />
                 <Legend wrapperStyle={{ fontSize: 10 }} />
                 <Line type="monotone" dataKey="ax" stroke="#ff6b6b" dot={false} strokeWidth={1.5} name="Ax" />
                 <Line type="monotone" dataKey="ay" stroke="#69db7c" dot={false} strokeWidth={1.5} name="Ay" />
                 <Line type="monotone" dataKey="az" stroke="#74c0fc" dot={false} strokeWidth={1.5} name="Az" />
                 <Line type="monotone" dataKey="aTotal" stroke="#ffd43b" dot={false} strokeWidth={2} name="|A|" />
+              </LineChart>
+            </ResponsiveContainer>
+          </Box>
+        </Tabs.Panel>
+
+        <Tabs.Panel value="energy" pt="xs">
+          <Box style={{ height: 150, background: '#1a1a1a', borderRadius: 4, padding: 4 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={history} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#333" />
+                <XAxis
+                  dataKey="time"
+                  tick={{ fontSize: 10, fill: '#888' }}
+                  stroke="#444"
+                  tickFormatter={(value) => value.toFixed(1)}
+                  label={{ value: 'Time (s)', position: 'insideBottom', offset: -2, fontSize: 10, fill: '#888' }}
+                />
+                <YAxis tick={{ fontSize: 10, fill: '#888' }} stroke="#444" />
+                <Tooltip
+                  contentStyle={{ background: '#2a2a2a', border: '1px solid #444', fontSize: 11 }}
+                  labelStyle={{ color: '#fff' }}
+                  formatter={(value) => [`${((value as number) / 1000).toFixed(2)} kJ`, '']}
+                  labelFormatter={(label) => `Time: ${(label as number).toFixed(2)}s`}
+                />
+                <Legend wrapperStyle={{ fontSize: 10 }} />
+                <Line type="monotone" dataKey="kineticJ" stroke="#69db7c" dot={false} strokeWidth={1.5} name="Kinetic" />
+                <Line type="monotone" dataKey="potentialJ" stroke="#74c0fc" dot={false} strokeWidth={1.5} name="Potential" />
+                <Line type="monotone" dataKey="totalJ" stroke="#ffd43b" dot={false} strokeWidth={2} name="Total" />
               </LineChart>
             </ResponsiveContainer>
           </Box>
@@ -220,6 +288,7 @@ function TrainCard({ train, path, history }: {
 export function SimulationPanel({ simulationState, interpolatedPaths }: SimulationPanelProps) {
   const { time_s, running, trains } = simulationState;
   const prevTimeRef = useRef<number>(0);
+  const lastTimeRef = useRef<number>(0); // For reset detection
   
   // Use React state for history to trigger re-renders
   const [histories, setHistories] = useState<Map<string, HistoryPoint[]>>(new Map());
@@ -260,7 +329,6 @@ export function SimulationPanel({ simulationState, interpolatedPaths }: Simulati
         z: tangentAccel.z + centripetalAccel.z,
       };
 
-      const totalVelocity = Math.sqrt(worldVelocity.x**2 + worldVelocity.y**2 + worldVelocity.z**2);
       const totalAccel = Math.sqrt(worldAccel.x**2 + worldAccel.y**2 + worldAccel.z**2);
 
       // Only add point if time has advanced
@@ -273,11 +341,14 @@ export function SimulationPanel({ simulationState, interpolatedPaths }: Simulati
           vx: worldVelocity.x,
           vy: worldVelocity.y,
           vz: worldVelocity.z,
-          vTotal: totalVelocity,
+          vTotal: train.velocity_mps, // Use signed velocity instead of absolute
           ax: worldAccel.x,
           ay: worldAccel.y,
           az: worldAccel.z,
           aTotal: totalAccel,
+          kineticJ: train.energy?.kinetic_j ?? 0,
+          potentialJ: train.energy?.potential_j ?? 0,
+          totalJ: train.energy?.total_j ?? 0,
         }];
 
         // Limit history size
@@ -298,9 +369,11 @@ export function SimulationPanel({ simulationState, interpolatedPaths }: Simulati
 
   // Clear history when simulation resets
   useEffect(() => {
-    if (time_s < prevTimeRef.current) {
+    if (time_s < lastTimeRef.current) {
       setHistories(new Map());
+      prevTimeRef.current = time_s;
     }
+    lastTimeRef.current = time_s;
   }, [time_s]);
 
   return (

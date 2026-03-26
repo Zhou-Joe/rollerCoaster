@@ -52,6 +52,11 @@ export interface TrainPhysicsState {
     vertical_g: number;
     resultant_g: number;
   };
+  energy?: {
+    kinetic_j: number;
+    potential_j: number;
+    total_j: number;
+  };
 }
 
 export interface SamplePoint {
@@ -89,6 +94,7 @@ export interface Project {
   };
   points: Point[];
   paths: Path[];
+  junctions: Junction[];
   vehicles: Vehicle[];
   trains: Train[];
   equipment: Equipment[];
@@ -117,6 +123,13 @@ export interface Station {
   start_s: number;
   end_s: number;
   type: 'load' | 'unload' | 'transfer';
+}
+
+export interface Junction {
+  id: string;
+  incoming_path_id: string;
+  outgoing_path_ids: string[];
+  position_s: number;
 }
 
 export interface EquipmentBase {
@@ -165,4 +178,14 @@ export interface Booster extends EquipmentBase {
   boost_duration_s?: number;
 }
 
-export type Equipment = LSMLaunch | Lift | PneumaticBrake | TrimBrake | Booster | EquipmentBase;
+export interface TrackSwitch extends EquipmentBase {
+  equipment_type: 'track_switch';
+  junction_id?: string;
+  incoming_path_id?: string;
+  outgoing_path_ids?: string[];
+  current_alignment?: string;
+  actuation_time_s?: number;
+  locked_when_occupied?: boolean;
+}
+
+export type Equipment = LSMLaunch | Lift | PneumaticBrake | TrimBrake | Booster | TrackSwitch;

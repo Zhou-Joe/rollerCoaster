@@ -35,6 +35,10 @@ class TrainPhysicsState:
     mass_kg: float            # Total mass (includes passengers)
     forces: ForceComponents = field(default_factory=ForceComponents)
     gforces: GForceComponents = field(default_factory=GForceComponents)
+    # Energy components
+    kinetic_energy_j: float = 0.0      # KE = 1/2 * m * v^2
+    potential_energy_j: float = 0.0    # PE = m * g * h
+    total_energy_j: float = 0.0        # Total energy
 
 
 @dataclass

@@ -1,7 +1,7 @@
 import { BrowserRouter, Routes, Route, Link } from 'react-router-dom';
 import { AppShell, Text, Group, Box, Anchor, Button, Badge, Tabs, ScrollArea, Modal, Stack, ActionIcon } from '@mantine/core';
 import { useQuery } from '@tanstack/react-query';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { healthCheck, listProjects, getProject, getInterpolatedPath, startSimulation, stopSimulation, resetSimulation, stepSimulation, getSimulationState, createProject, updateProject, deleteProject } from './api/client';
 import { useProjectStore } from './state/projectStore';
 import { Editor3D } from './components/Editor3D';
@@ -11,7 +11,9 @@ import { SimulationPanel } from './components/SimulationPanel';
 import { TrackEditor } from './components/TrackEditor/TrackEditor';
 import { EquipmentEditor } from './components/EquipmentEditor/EquipmentEditor';
 import { VehicleEditor } from './components/VehicleEditor/VehicleEditor';
+import { JunctionEditor } from './components/JunctionEditor/JunctionEditor';
 import { ProjectManager } from './components/ProjectManager/ProjectManager';
+import { SwitchControlPanel } from './components/SwitchControlPanel/SwitchControlPanel';
 import { IconTrash } from '@tabler/icons-react';
 
 function App() {
@@ -75,18 +77,6 @@ function App() {
     }
   };
 
-  // Simulation polling
-  const pollSimulationState = useCallback(async () => {
-    if (currentProject?.id) {
-      try {
-        const state = await stepSimulation(currentProject.id, 1);
-        setSimulationState(state);
-      } catch (e) {
-        console.error('Failed to poll simulation:', e);
-      }
-    }
-  }, [currentProject, setSimulationState]);
-
   const handlePlay = async () => {
     if (!currentProject?.id) return;
     await startSimulation(currentProject.id);
@@ -94,9 +84,41 @@ function App() {
       setSimulationState({ ...simulationState, running: true });
     }
 
-    const interval = window.setInterval(() => {
-      pollSimulationState();
-    }, 100 / playbackSpeed);
+    // Smart speed control: backend does precise steps, frontend skips frames for display
+    // This allows arbitrary speed multipliers without overwhelming the browser
+    // Target: smooth UI at ~20-50fps regardless of simulation speed
+    let updateInterval = 50; // ms between UI updates (20fps base)
+    let stepsPerUpdate = 1;
+
+    if (playbackSpeed <= 1) {
+      // Slow motion: 50ms interval, 1 step per update
+      updateInterval = 50;
+      stepsPerUpdate = 1;
+    } else if (playbackSpeed <= 10) {
+      // Normal to fast: keep smooth animation, increase steps
+      updateInterval = 20; // 50fps for smooth animation
+      stepsPerUpdate = Math.round(playbackSpeed / 2); // 1-5 steps
+    } else if (playbackSpeed <= 50) {
+      // Very fast: more steps, slightly slower UI updates
+      updateInterval = 30; // ~33fps
+      stepsPerUpdate = Math.round(playbackSpeed); // 20-50 steps per update
+    } else {
+      // Ultra fast (100x+): backend runs many steps, UI updates at ~20fps
+      updateInterval = 50; // 20fps - smooth enough for display
+      stepsPerUpdate = Math.round(playbackSpeed * 2); // 200+ steps per update
+    }
+
+    const interval = window.setInterval(async () => {
+      if (currentProject?.id) {
+        try {
+          // Run multiple simulation steps for high speeds
+          const state = await stepSimulation(currentProject.id, stepsPerUpdate);
+          setSimulationState(state);
+        } catch (e) {
+          console.error('Failed to poll simulation:', e);
+        }
+      }
+    }, updateInterval);
     setSimulationInterval(interval);
   };
 
@@ -172,10 +194,14 @@ function App() {
         { id: 'main_track', name: 'Main Track', point_ids: ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'p8', 'p9', 'p10', 'p11', 'p12'] }
       ],
       vehicles: [
-        { id: 'v1', length_m: 2.0, dry_mass_kg: 500.0, capacity: 4, passenger_mass_per_person_kg: 75 }
+        { id: 'v1', length_m: 2.0, dry_mass_kg: 500.0, capacity: 4, passenger_mass_per_person_kg: 75 },
+        { id: 'v2', length_m: 2.0, dry_mass_kg: 500.0, capacity: 4, passenger_mass_per_person_kg: 75 },
+        { id: 'v3', length_m: 2.0, dry_mass_kg: 500.0, capacity: 4, passenger_mass_per_person_kg: 75 },
+        { id: 'v4', length_m: 2.0, dry_mass_kg: 500.0, capacity: 4, passenger_mass_per_person_kg: 75 },
+        { id: 'v5', length_m: 2.0, dry_mass_kg: 500.0, capacity: 4, passenger_mass_per_person_kg: 75 }
       ],
       trains: [
-        { id: 'train_1', vehicle_ids: ['v1'], current_path_id: 'main_track', front_position_s: 5.0 }
+        { id: 'train_1', vehicle_ids: ['v1', 'v2', 'v3', 'v4', 'v5'], current_path_id: 'main_track', front_position_s: 5.0 }
       ],
       equipment: [
         {
@@ -187,7 +213,6 @@ function App() {
           chain_speed_mps: 2,
           engagement_point_s: 5,
           release_point_s: 40,
-          max_pull_force_n: 5000,
           enabled: true
         },
         {
@@ -320,12 +345,17 @@ function App() {
                   <Tabs value={activeTab} onChange={(v) => setActiveTab(v || 'track')}>
                     <Tabs.List>
                       <Tabs.Tab value="track" style={{ fontSize: '12px' }}>Track</Tabs.Tab>
+                      <Tabs.Tab value="junctions" style={{ fontSize: '12px' }}>Junctions</Tabs.Tab>
                       <Tabs.Tab value="equipment" style={{ fontSize: '12px' }}>Equipment</Tabs.Tab>
                       <Tabs.Tab value="vehicles" style={{ fontSize: '12px' }}>Vehicles</Tabs.Tab>
                     </Tabs.List>
 
                     <Tabs.Panel value="track" pt="md">
                       <TrackEditor />
+                    </Tabs.Panel>
+
+                    <Tabs.Panel value="junctions" pt="md">
+                      <JunctionEditor />
                     </Tabs.Panel>
 
                     <Tabs.Panel value="equipment" pt="md">
@@ -341,10 +371,15 @@ function App() {
 
               {/* Simulation info */}
               {editingMode === 'simulate' && simulationState && (
-                <SimulationPanel
-                  simulationState={simulationState}
-                  interpolatedPaths={interpolatedPaths}
-                />
+                <>
+                  <SimulationPanel
+                    simulationState={simulationState}
+                    interpolatedPaths={interpolatedPaths}
+                  />
+                  <Box mt="md">
+                    <SwitchControlPanel />
+                  </Box>
+                </>
               )}
             </ScrollArea.Autosize>
           </AppShell.Section>

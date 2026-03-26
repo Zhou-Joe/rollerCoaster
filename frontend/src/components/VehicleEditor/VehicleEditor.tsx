@@ -6,6 +6,7 @@ import {
 import { IconPlus, IconTrash, IconEdit } from '@tabler/icons-react';
 import { useProjectStore } from '../../state/projectStore';
 import { updateProject } from '../../api/client';
+import { SimulationSettingsEditor } from '../SimulationSettingsEditor';
 import type { Vehicle, Train } from '../../types';
 
 export function VehicleEditor() {
@@ -429,6 +430,9 @@ export function VehicleEditor() {
           </Group>
         </Stack>
       </Modal>
+
+      {/* Simulation Settings */}
+      <SimulationSettingsEditor />
     </Stack>
   );
 }

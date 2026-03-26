@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from typing import Dict
 from datetime import datetime, timezone
-from app.models.project import Project, ProjectMetadata
+from app.models.project import Project, ProjectMetadata, SimulationSettings
 from app.services.project_io import ProjectIO
 import uuid
 
@@ -65,6 +65,8 @@ async def update_project(project_id: str, updates: Dict):
     if "blocks" in updates:
         from app.models.topology import Block
         project.blocks = [Block(**b) for b in updates["blocks"]]
+    if "simulation_settings" in updates:
+        project.simulation_settings = SimulationSettings(**updates["simulation_settings"])
 
     project.metadata.modified_at = datetime.now(timezone.utc)
     _projects[project_id] = project

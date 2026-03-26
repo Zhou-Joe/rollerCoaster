@@ -8,7 +8,7 @@ import { EquipmentOverlay } from '../EquipmentOverlay';
 import { PointMarkers } from '../PointMarkers/PointMarkers';
 import { useProjectStore } from '../../state/projectStore';
 import { updateProject, getInterpolatedPath } from '../../api/client';
-import { Box, Text, Button, ActionIcon, Tooltip } from '@mantine/core';
+import { Box, Text, Button, Tooltip } from '@mantine/core';
 import { IconRefresh } from '@tabler/icons-react';
 
 export function Editor3D() {

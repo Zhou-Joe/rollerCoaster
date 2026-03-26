@@ -3,13 +3,13 @@ import {
   Paper, Text, Group, Button, Stack, NumberInput, Select,
   Accordion, Badge, ActionIcon, SegmentedControl
 } from '@mantine/core';
-import { IconPlus, IconTrash } from '@tabler/icons-react';
+import { IconPlus, IconTrash, IconEdit } from '@tabler/icons-react';
 import { useProjectStore } from '../../state/projectStore';
 import { updateProject } from '../../api/client';
 import type { Equipment } from '../../types/simulation';
 
 interface EquipmentForm {
-  equipment_type: 'lsm_launch' | 'lift' | 'pneumatic_brake' | 'trim_brake' | 'booster';
+  equipment_type: 'lsm_launch' | 'lift' | 'pneumatic_brake' | 'trim_brake' | 'booster' | 'track_switch';
   id: string;
   path_id: string;
   start_s: number;
@@ -25,11 +25,16 @@ interface EquipmentForm {
   // Brake
   max_brake_force_n?: number;
   fail_safe_mode?: 'normally_open' | 'normally_closed';
+  // Track Switch
+  junction_id?: string;
+  outgoing_path_ids?: string[];
+  current_alignment?: string;
 }
 
 export function EquipmentEditor() {
   const { currentProject } = useProjectStore();
   const [showForm, setShowForm] = useState(false);
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [form, setForm] = useState<EquipmentForm>({
     equipment_type: 'lsm_launch',
     id: '',
@@ -53,7 +58,21 @@ export function EquipmentEditor() {
     { value: 'pneumatic_brake', label: 'Pneumatic Brake' },
     { value: 'trim_brake', label: 'Trim Brake' },
     { value: 'booster', label: 'Booster' },
+    { value: 'track_switch', label: 'Track Switch' },
   ];
+
+  const resetForm = () => {
+    setForm({
+      equipment_type: 'lsm_launch',
+      id: '',
+      path_id: '',
+      start_s: 0,
+      end_s: 10,
+      max_force_n: 10000,
+    });
+    setEditingIndex(null);
+    setShowForm(false);
+  };
 
   const handleAddEquipment = async () => {
     if (!currentProject.id || !form.path_id) return;
@@ -90,17 +109,56 @@ export function EquipmentEditor() {
     } else if (form.equipment_type === 'booster') {
       newEquipment.max_force_n = form.max_force_n || 5000;
       newEquipment.boost_duration_s = 2;
+    } else if (form.equipment_type === 'track_switch') {
+      newEquipment.junction_id = form.junction_id || `junction_${Date.now()}`;
+      newEquipment.incoming_path_id = form.path_id;
+      newEquipment.outgoing_path_ids = form.outgoing_path_ids || [];
+      newEquipment.current_alignment = form.current_alignment || (form.outgoing_path_ids?.[0] || '');
+      newEquipment.actuation_time_s = 2.0;
+      newEquipment.locked_when_occupied = true;
     }
 
     try {
-      await updateProject(currentProject.id, {
-        equipment: [...currentProject.equipment, newEquipment as Equipment]
-      });
-      setShowForm(false);
+      if (editingIndex !== null) {
+        // Update existing
+        const newEquipmentList = [...currentProject.equipment];
+        newEquipmentList[editingIndex] = newEquipment as Equipment;
+        await updateProject(currentProject.id, { equipment: newEquipmentList });
+      } else {
+        // Add new
+        await updateProject(currentProject.id, {
+          equipment: [...currentProject.equipment, newEquipment as Equipment]
+        });
+      }
+      resetForm();
       window.location.reload();
     } catch (e) {
-      console.error('Failed to add equipment:', e);
+      console.error('Failed to save equipment:', e);
     }
+  };
+
+  const handleEditEquipment = (index: number) => {
+    const eq = currentProject.equipment[index] as any;
+    setForm({
+      equipment_type: eq.equipment_type as any,
+      id: eq.id,
+      path_id: eq.path_id,
+      start_s: eq.start_s,
+      end_s: eq.end_s,
+      stator_count: eq.stator_count ?? 4,
+      max_force_n: eq.max_force_n ?? eq.max_brake_force_n ?? 10000,
+      launch_velocity_mps: eq.launch_velocity_mps ?? 15,
+      chain_speed_mps: eq.chain_speed_mps ?? 2,
+      engagement_point_s: eq.engagement_point_s ?? eq.start_s,
+      release_point_s: eq.release_point_s ?? eq.end_s,
+      max_brake_force_n: eq.max_brake_force_n ?? 8000,
+      fail_safe_mode: eq.fail_safe_mode ?? 'normally_closed',
+      junction_id: eq.junction_id ?? '',
+      outgoing_path_ids: eq.outgoing_path_ids ?? [],
+      current_alignment: eq.current_alignment ?? '',
+    });
+    setEditingIndex(index);
+    setShowForm(true);
   };
 
   const handleDeleteEquipment = async (index: number) => {
@@ -122,6 +180,7 @@ export function EquipmentEditor() {
       case 'pneumatic_brake': return `Brake (${eq.max_brake_force_n || 0} N)`;
       case 'trim_brake': return `Trim Brake`;
       case 'booster': return `Booster`;
+      case 'track_switch': return `Switch → ${eq.current_alignment?.slice(0, 8) || '?'}`;
       default: return eq.equipment_type;
     }
   };
@@ -145,6 +204,7 @@ export function EquipmentEditor() {
                   variant="light"
                   leftSection={<IconPlus size={14} />}
                   onClick={() => {
+                    resetForm();
                     setForm({
                       ...form,
                       path_id: currentProject.paths[0]?.id || '',
@@ -161,7 +221,9 @@ export function EquipmentEditor() {
               {/* Equipment form */}
               {showForm && (
                 <Paper p="sm" withBorder style={{ background: '#2a2a2a' }}>
-                  <Text size="xs" c="dimmed" mb="xs">New Equipment</Text>
+                  <Text size="xs" c="dimmed" mb="xs">
+                    {editingIndex !== null ? 'Edit Equipment' : 'New Equipment'}
+                  </Text>
                   <Stack gap="xs">
                     <Select
                       size="xs"
@@ -258,12 +320,41 @@ export function EquipmentEditor() {
                       </>
                     )}
 
+                    {form.equipment_type === 'track_switch' && (
+                      <>
+                        <Text size="xs" c="dimmed" mb="xs">
+                          Track Switch connects incoming path to one of multiple outgoing paths
+                        </Text>
+                        <Select
+                          size="xs"
+                          label="Outgoing Path 1"
+                          data={currentProject.paths.map(p => ({ value: p.id, label: p.name || p.id }))}
+                          value={form.outgoing_path_ids?.[0] || ''}
+                          onChange={(v) => setForm({ ...form, outgoing_path_ids: [v || '', form.outgoing_path_ids?.[1] || ''].filter(Boolean) })}
+                        />
+                        <Select
+                          size="xs"
+                          label="Outgoing Path 2 (optional)"
+                          data={[{ value: '', label: 'None' }, ...currentProject.paths.map(p => ({ value: p.id, label: p.name || p.id }))]}
+                          value={form.outgoing_path_ids?.[1] || ''}
+                          onChange={(v) => setForm({ ...form, outgoing_path_ids: [form.outgoing_path_ids?.[0] || '', v || ''].filter(Boolean) })}
+                        />
+                        <Select
+                          size="xs"
+                          label="Current Alignment"
+                          data={form.outgoing_path_ids?.filter(Boolean).map(pid => ({ value: pid, label: pid })) || []}
+                          value={form.current_alignment}
+                          onChange={(v) => setForm({ ...form, current_alignment: v || '' })}
+                        />
+                      </>
+                    )}
+
                     <Group grow>
-                      <Button size="xs" variant="subtle" onClick={() => setShowForm(false)}>
+                      <Button size="xs" variant="subtle" onClick={resetForm}>
                         Cancel
                       </Button>
                       <Button size="xs" onClick={handleAddEquipment}>
-                        Add
+                        {editingIndex !== null ? 'Update' : 'Add'}
                       </Button>
                     </Group>
                   </Stack>
@@ -275,14 +366,24 @@ export function EquipmentEditor() {
                 <Paper key={idx} p="xs" withBorder style={{ background: '#222' }}>
                   <Group justify="space-between">
                     <Text size="xs" fw={500}>{getEquipmentLabel(eq)}</Text>
-                    <ActionIcon
-                      size="xs"
-                      variant="subtle"
-                      color="red"
-                      onClick={() => handleDeleteEquipment(idx)}
-                    >
-                      <IconTrash size={12} />
-                    </ActionIcon>
+                    <Group gap={4}>
+                      <ActionIcon
+                        size="xs"
+                        variant="subtle"
+                        color="blue"
+                        onClick={() => handleEditEquipment(idx)}
+                      >
+                        <IconEdit size={12} />
+                      </ActionIcon>
+                      <ActionIcon
+                        size="xs"
+                        variant="subtle"
+                        color="red"
+                        onClick={() => handleDeleteEquipment(idx)}
+                      >
+                        <IconTrash size={12} />
+                      </ActionIcon>
+                    </Group>
                   </Group>
                   <Group gap="xs" mt="xs">
                     <Text size="xs" c="dimmed">Path: {eq.path_id}</Text>

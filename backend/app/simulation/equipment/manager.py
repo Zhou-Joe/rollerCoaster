@@ -5,7 +5,7 @@ aggregates equipment forces for physics simulation.
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Union, TYPE_CHECKING
+from typing import Dict, List, Optional, Tuple, Union, TYPE_CHECKING
 
 from app.models.equipment import (
     Equipment,
@@ -18,7 +18,7 @@ from app.models.equipment import (
 )
 from app.models.common import BrakeState, BoosterMode, FailSafeMode
 from .lsm import compute_lsm_force, create_lsm_state, LSMState
-from .lift import compute_lift_force, create_lift_state, LiftState
+from .lift import compute_lift_effect, create_lift_state, LiftState
 from .pneumatic_brake import (
     compute_pneumatic_brake_force,
     create_pneumatic_brake_state,
@@ -107,12 +107,13 @@ class EquipmentManager:
         train_velocity_mps: float,
         train_mass_kg: float,
         dt: float = 0.01
-    ) -> float:
+    ) -> Tuple[float, Optional[float]]:
         """
-        Compute total equipment force on a train.
+        Compute total equipment force on a train and any velocity override.
 
         Sums forces from all equipment that the train is currently
-        interacting with.
+        interacting with. For lift systems, returns a velocity override
+        instead of force (the lift mechanically drives the train).
 
         Args:
             train_path_id: ID of path the train is on
@@ -122,9 +123,12 @@ class EquipmentManager:
             dt: Time step
 
         Returns:
-            Total equipment force in Newtons
+            Tuple of (total_force_n, lift_velocity_override_mps)
+            - lift_velocity_override_mps is None if no lift is engaged,
+              otherwise it's the lift speed that the train should follow
         """
         total_force = 0.0
+        lift_velocity_override = None
 
         for equipment_dict in self.project.equipment:
             equipment = _parse_equipment(equipment_dict)
@@ -143,11 +147,14 @@ class EquipmentManager:
                 if equipment.path_id == train_path_id:
                     state = self.states.lift.get(equipment.id)
                     if state:
-                        force = compute_lift_force(
+                        force, lift_velocity = compute_lift_effect(
                             equipment, state,
                             train_s, train_velocity_mps, dt
                         )
                         total_force += force
+                        # If lift is engaged, it overrides velocity
+                        if state.engaged and lift_velocity is not None:
+                            lift_velocity_override = lift_velocity
 
             elif isinstance(equipment, PneumaticBrake):
                 if equipment.path_id == train_path_id:
@@ -179,7 +186,7 @@ class EquipmentManager:
                         )
                         total_force += force
 
-        return total_force
+        return total_force, lift_velocity_override
 
     def set_lsm_enabled(self, lsm_id: str, enabled: bool) -> bool:
         """Enable or disable an LSM."""
