@@ -7,6 +7,7 @@ import { useProjectStore } from './state/projectStore';
 import { Editor3D } from './components/Editor3D';
 import { SimulationPlayer } from './components/SimulationPlayer';
 import { TelemetryPanel } from './components/TelemetryPanel';
+import { SimulationPanel } from './components/SimulationPanel';
 import { TrackEditor } from './components/TrackEditor/TrackEditor';
 import { EquipmentEditor } from './components/EquipmentEditor/EquipmentEditor';
 import { VehicleEditor } from './components/VehicleEditor/VehicleEditor';
@@ -30,6 +31,7 @@ function App() {
     simulationState,
     setSimulationState,
     setInterpolatedPath,
+    interpolatedPaths,
     playbackSpeed,
     editingMode,
     setEditingMode,
@@ -333,35 +335,12 @@ function App() {
                 </Box>
               )}
 
-              {/* Simulation info */}
+              {/* Simulation Panel */}
               {editingMode === 'simulate' && simulationState && (
-                <Box>
-                  <Text size="xs" c="dimmed" mb="xs">Simulation</Text>
-                  <Box p="sm" style={{ background: '#2a2a2a', borderRadius: 4 }}>
-                    <Text size="sm" c="white">Time: {simulationState.time_s.toFixed(2)}s</Text>
-                    <Text size="xs" c="dimmed">
-                      Status: {simulationState.running ? 'Running' : 'Stopped'}
-                    </Text>
-                  </Box>
-
-                  {simulationState.trains.map((train) => (
-                    <Box key={train.train_id} p="sm" mt="sm" style={{ background: '#2a2a2a', borderRadius: 4 }}>
-                      <Text size="sm" c="white" fw={500}>{train.train_id}</Text>
-                      <Group gap="xs" mt="xs">
-                        <Badge size="xs" color={train.velocity_mps > 0 ? 'green' : 'gray'}>
-                          {train.velocity_mps.toFixed(1)} m/s
-                        </Badge>
-                        <Badge size="xs">{train.acceleration_mps2.toFixed(2)} m/s²</Badge>
-                      </Group>
-                      <Group gap="xs" mt="xs">
-                        <Text size="xs" c="dimmed">Pos: {train.s_front_m.toFixed(1)}m</Text>
-                      </Group>
-                      <Group gap="xs" mt="xs">
-                        <Badge size="xs" variant="light">G: {train.gforces.resultant_g.toFixed(2)}</Badge>
-                      </Group>
-                    </Box>
-                  ))}
-                </Box>
+                <SimulationPanel
+                  simulationState={simulationState}
+                  interpolatedPaths={interpolatedPaths}
+                />
               )}
             </ScrollArea.Autosize>
           </AppShell.Section>
