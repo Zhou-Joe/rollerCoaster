@@ -189,9 +189,22 @@ function App() {
         { id: 'p10', x: 40, y: 20, z: 5, bank_deg: -20 },
         { id: 'p11', x: 20, y: 10, z: 10, bank_deg: 0 },
         { id: 'p12', x: 0, y: 0, z: 20, bank_deg: 0 },
+        // Branch track points
+        { id: 'p13', x: 60, y: 50, z: 3, bank_deg: 0 },
+        { id: 'p14', x: 40, y: 60, z: 8, bank_deg: 15 },
+        { id: 'p15', x: 20, y: 50, z: 15, bank_deg: 0 },
       ],
       paths: [
-        { id: 'main_track', name: 'Main Track', point_ids: ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'p8', 'p9', 'p10', 'p11', 'p12'] }
+        { id: 'main_track', name: 'Main Track', point_ids: ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'p8', 'p9', 'p10', 'p11', 'p12'] },
+        { id: 'branch_track', name: 'Branch Track', point_ids: ['p9', 'p13', 'p14', 'p15'] }
+      ],
+      junctions: [
+        {
+          id: 'junction_1',
+          incoming_path_id: 'main_track',
+          outgoing_path_ids: ['main_track', 'branch_track'],
+          position_s: 180
+        }
       ],
       vehicles: [
         { id: 'v1', length_m: 2.0, dry_mass_kg: 500.0, capacity: 4, passenger_mass_per_person_kg: 75 },
@@ -227,8 +240,28 @@ function App() {
           air_pressure: 6,
           state: 'open',
           enabled: true
+        },
+        {
+          equipment_type: 'track_switch',
+          id: 'switch_1',
+          path_id: 'main_track',
+          start_s: 175,
+          end_s: 185,
+          junction_id: 'junction_1',
+          incoming_path_id: 'main_track',
+          outgoing_path_ids: ['main_track', 'branch_track'],
+          current_alignment: 'main_track',
+          actuation_time_s: 2.0,
+          locked_when_occupied: true
         }
-      ]
+      ],
+      simulation_settings: {
+        time_step_s: 0.01,
+        gravity_mps2: 9.81,
+        drag_coefficient: 0.5,
+        rolling_resistance_coefficient: 0.05,
+        air_density_kg_m3: 1.225
+      }
     });
 
     await refetchProjects();
