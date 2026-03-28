@@ -10,8 +10,21 @@ class ForceComponents:
     gravity_tangent_n: float = 0.0
     drag_n: float = 0.0
     rolling_resistance_n: float = 0.0
-    equipment_n: float = 0.0  # Launch, lift, brake, booster forces
+    equipment_n: float = 0.0  # Total equipment force (launch, lift, brake, booster)
     total_n: float = 0.0
+
+
+@dataclass
+class EquipmentForceBreakdown:
+    """Detailed breakdown of equipment forces."""
+    lsm_force_n: float = 0.0      # LSM launch force
+    lift_force_n: float = 0.0     # Lift pull force
+    brake_force_n: float = 0.0    # Brake force (negative)
+    booster_force_n: float = 0.0  # Booster drive force
+    trim_force_n: float = 0.0     # Trim brake force (negative)
+    # LSM specific state
+    lsm_stators_active: int = 0
+    lsm_overlap_ratio: float = 0.0
 
 
 @dataclass
@@ -34,6 +47,7 @@ class TrainPhysicsState:
     acceleration_mps2: float  # Current acceleration
     mass_kg: float            # Total mass (includes passengers)
     forces: ForceComponents = field(default_factory=ForceComponents)
+    equipment_forces: EquipmentForceBreakdown = field(default_factory=EquipmentForceBreakdown)
     gforces: GForceComponents = field(default_factory=GForceComponents)
     # Energy components
     kinetic_energy_j: float = 0.0      # KE = 1/2 * m * v^2

@@ -3,7 +3,7 @@
 import pytest
 from app.models.equipment import Lift
 from app.simulation.equipment.lift import (
-    compute_lift_force,
+    compute_lift_effect,
     create_lift_state,
     check_lift_release,
     LiftState,
@@ -71,7 +71,7 @@ class TestLiftForce:
     def test_no_force_when_disabled(self, lift):
         """Lift should apply no force when disabled."""
         state = LiftState(enabled=False)
-        force = compute_lift_force(lift, state, train_s=50.0, train_velocity_mps=1.0, dt=0.01)
+        force, velocity = compute_lift_effect(lift, state, train_s=50.0, train_velocity_mps=1.0, dt=0.01)
 
         assert force == 0.0
         assert state.engaged is False
@@ -81,56 +81,61 @@ class TestLiftForce:
         state = LiftState(enabled=True)
 
         # Before engagement zone
-        force = compute_lift_force(lift, state, train_s=2.0, train_velocity_mps=1.0, dt=0.01)
+        force, velocity = compute_lift_effect(lift, state, train_s=2.0, train_velocity_mps=1.0, dt=0.01)
         assert force == 0.0
 
         # After release zone
         state2 = LiftState(enabled=True)
-        force = compute_lift_force(lift, state2, train_s=98.0, train_velocity_mps=1.0, dt=0.01)
+        force, velocity = compute_lift_effect(lift, state2, train_s=98.0, train_velocity_mps=1.0, dt=0.01)
         # At release point, should disengage
         assert state2.engaged is False or force == 0.0
 
     def test_engages_in_engagement_zone(self, lift):
         """Lift should engage when train enters engagement zone."""
         state = LiftState(enabled=True)
-        force = compute_lift_force(lift, state, train_s=10.0, train_velocity_mps=1.0, dt=0.01)
+        force, velocity = compute_lift_effect(lift, state, train_s=10.0, train_velocity_mps=1.0, dt=0.01)
 
         assert state.engaged is True
-        assert force > 0.0
+        # When engaged, lift returns velocity override (2.0 m/s)
+        assert velocity == 2.0
 
-    def test_no_force_when_above_lift_speed(self, lift):
-        """Lift should apply no force when train is faster than lift speed."""
+    def test_velocity_override_when_engaged(self, lift):
+        """Lift should return velocity override when engaged."""
         state = LiftState(enabled=True, engaged=True, engagement_progress=1.0)
-        force = compute_lift_force(lift, state, train_s=50.0, train_velocity_mps=3.0, dt=0.01)
+        force, velocity = compute_lift_effect(lift, state, train_s=50.0, train_velocity_mps=1.0, dt=0.01)
 
+        # When engaged, velocity is overridden to lift speed
+        assert velocity == 2.0
+        assert force == 0.0  # Force is 0 because lift overrides velocity directly
+
+    def test_no_engagement_when_above_lift_speed(self, lift):
+        """Lift should still engage even if train is faster, but it controls velocity."""
+        state = LiftState(enabled=True, engaged=True, engagement_progress=1.0)
+        force, velocity = compute_lift_effect(lift, state, train_s=50.0, train_velocity_mps=3.0, dt=0.01)
+
+        # Lift overrides velocity to its speed
+        assert velocity == 2.0
+
+    def test_velocity_override_when_below_lift_speed(self, lift):
+        """Lift should override velocity when engaged."""
+        state = LiftState(enabled=True, engaged=True, engagement_progress=1.0)
+        force, velocity = compute_lift_effect(lift, state, train_s=50.0, train_velocity_mps=1.0, dt=0.01)
+
+        # Lift overrides velocity to its speed
+        assert velocity == 2.0
         assert force == 0.0
-
-    def test_force_when_below_lift_speed(self, lift):
-        """Lift should apply force when train is slower than lift speed."""
-        state = LiftState(enabled=True, engaged=True, engagement_progress=1.0)
-        force = compute_lift_force(lift, state, train_s=50.0, train_velocity_mps=1.0, dt=0.01)
-
-        assert force > 0.0
-        assert force <= lift.max_pull_force_n
-
-    def test_force_clamped_to_max(self, lift):
-        """Force should never exceed max_pull_force_n."""
-        state = LiftState(enabled=True, engaged=True, engagement_progress=1.0)
-        force = compute_lift_force(lift, state, train_s=50.0, train_velocity_mps=0.0, dt=0.01)
-
-        assert force <= lift.max_pull_force_n
 
     def test_smooth_engagement(self, lift):
         """Engagement should be smooth (ramp up)."""
         state = LiftState(enabled=True, engaged=False, engagement_progress=0.0)
 
         # First step - should be partially engaged
-        force1 = compute_lift_force(lift, state, train_s=10.0, train_velocity_mps=0.0, dt=0.01)
+        force1, velocity = compute_lift_effect(lift, state, train_s=10.0, train_velocity_mps=0.0, dt=0.01)
         assert state.engagement_progress > 0.0
 
         # After many steps - should be fully engaged
         for _ in range(100):
-            compute_lift_force(lift, state, train_s=10.0, train_velocity_mps=0.0, dt=0.01)
+            compute_lift_effect(lift, state, train_s=10.0, train_velocity_mps=0.0, dt=0.01)
 
         assert state.engagement_progress == 1.0
 

@@ -113,9 +113,18 @@ def _compute_rotation_minimizing_frames(
 
 
 class CentripetalCatmullRom:
-    """Centripetal Catmull-Rom spline interpolation with rotation-minimizing frames."""
+    """Centripetal Catmull-Rom spline interpolation with rotation-minimizing frames.
 
-    def __init__(self, points: List[Point], resolution_m: float = 0.01):
+    Supports optional tangent constraints at start/end for smooth junction transitions.
+    """
+
+    def __init__(
+        self,
+        points: List[Point],
+        resolution_m: float = 0.01,
+        start_tangent: Optional[Tuple[float, float, float]] = None,
+        end_tangent: Optional[Tuple[float, float, float]] = None,
+    ):
         if len(points) < 2:
             raise GeometryError("Path requires at least 2 points")
 
@@ -124,6 +133,8 @@ class CentripetalCatmullRom:
 
         self._points = points
         self._resolution_m = resolution_m
+        self._start_tangent = start_tangent
+        self._end_tangent = end_tangent
         self._warnings: List[ValidationIssue] = []
         self._cleaned_points = self._remove_duplicates(points)
 
@@ -345,7 +356,11 @@ class CentripetalCatmullRom:
         return (x, y, z)
 
     def _get_point(self, idx: int, phantom: bool = False) -> Tuple[float, float, float]:
-        """Get point coordinates, creating phantom points if needed."""
+        """Get point coordinates, creating phantom points if needed.
+
+        When tangent constraints are provided, use them for phantom point calculation
+        to ensure smooth transitions at junctions.
+        """
         points = self._cleaned_points
         n = len(points)
 
@@ -353,12 +368,90 @@ class CentripetalCatmullRom:
             p = points[idx]
             return (p.x, p.y, p.z)
 
+        # Create phantom point for start (idx < 0)
         if idx < 0:
-            p0, p1 = points[0], points[1]
+            p0 = points[0]
+
+            # If we have a start tangent constraint, use it for phantom point
+            if self._start_tangent is not None:
+                # Calculate distance from first to second point for scaling
+                if n >= 2:
+                    p1 = points[1]
+                    dist = np.sqrt(
+                        (p1.x - p0.x) ** 2 + (p1.y - p0.y) ** 2 + (p1.z - p0.z) ** 2
+                    )
+                else:
+                    dist = 1.0  # Default distance for single-point case
+
+                # Normalize tangent if needed
+                t_norm = np.sqrt(
+                    self._start_tangent[0] ** 2 +
+                    self._start_tangent[1] ** 2 +
+                    self._start_tangent[2] ** 2
+                )
+                if t_norm < 1e-10:
+                    # Fallback to reflection if tangent is zero
+                    p1 = points[1] if n >= 2 else p0
+                    return (2 * p0.x - p1.x, 2 * p0.y - p1.y, 2 * p0.z - p1.z)
+
+                # Phantom point is p0 - tangent * dist (tangent points forward from p0)
+                normalized_t = (
+                    self._start_tangent[0] / t_norm,
+                    self._start_tangent[1] / t_norm,
+                    self._start_tangent[2] / t_norm
+                )
+                return (
+                    p0.x - normalized_t[0] * dist,
+                    p0.y - normalized_t[1] * dist,
+                    p0.z - normalized_t[2] * dist
+                )
+
+            # Default: reflect second point through first
+            p1 = points[1] if n >= 2 else p0
             return (2 * p0.x - p1.x, 2 * p0.y - p1.y, 2 * p0.z - p1.z)
+
+        # Create phantom point for end (idx >= n)
         else:
             p_last = points[n - 1]
-            p_prev = points[n - 2]
+
+            # If we have an end tangent constraint, use it for phantom point
+            if self._end_tangent is not None:
+                # Calculate distance from second-to-last to last point for scaling
+                if n >= 2:
+                    p_prev = points[n - 2]
+                    dist = np.sqrt(
+                        (p_last.x - p_prev.x) ** 2 +
+                        (p_last.y - p_prev.y) ** 2 +
+                        (p_last.z - p_prev.z) ** 2
+                    )
+                else:
+                    dist = 1.0
+
+                # Normalize tangent if needed
+                t_norm = np.sqrt(
+                    self._end_tangent[0] ** 2 +
+                    self._end_tangent[1] ** 2 +
+                    self._end_tangent[2] ** 2
+                )
+                if t_norm < 1e-10:
+                    # Fallback to reflection if tangent is zero
+                    p_prev = points[n - 2] if n >= 2 else p_last
+                    return (2 * p_last.x - p_prev.x, 2 * p_last.y - p_prev.y, 2 * p_last.z - p_prev.z)
+
+                # Phantom point is p_last + tangent * dist (tangent points forward from p_last)
+                normalized_t = (
+                    self._end_tangent[0] / t_norm,
+                    self._end_tangent[1] / t_norm,
+                    self._end_tangent[2] / t_norm
+                )
+                return (
+                    p_last.x + normalized_t[0] * dist,
+                    p_last.y + normalized_t[1] * dist,
+                    p_last.z + normalized_t[2] * dist
+                )
+
+            # Default: reflect second-to-last through last
+            p_prev = points[n - 2] if n >= 2 else p_last
             return (2 * p_last.x - p_prev.x, 2 * p_last.y - p_prev.y, 2 * p_last.z - p_prev.z)
 
     def _evaluate_derivative(self, t: float) -> Tuple[Tuple[float, float, float], Tuple[float, float, float]]:

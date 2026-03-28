@@ -98,7 +98,7 @@ class TestEquipmentManager:
         """Test computing equipment force from LSM."""
         manager = EquipmentManager(project_with_equipment)
 
-        force = manager.compute_equipment_force(
+        force, velocity_override, breakdown = manager.compute_equipment_force(
             train_path_id="path_1",
             train_s=50.0,
             train_velocity_mps=10.0,
@@ -107,12 +107,13 @@ class TestEquipmentManager:
         )
 
         assert force > 0.0  # LSM should be accelerating
+        assert velocity_override is None  # No lift engaged
 
     def test_compute_equipment_force_lift(self, project_with_equipment):
         """Test computing equipment force from lift."""
         manager = EquipmentManager(project_with_equipment)
 
-        force = manager.compute_equipment_force(
+        force, velocity_override, breakdown = manager.compute_equipment_force(
             train_path_id="path_1",
             train_s=150.0,
             train_velocity_mps=1.0,
@@ -120,7 +121,8 @@ class TestEquipmentManager:
             dt=0.01
         )
 
-        assert force > 0.0  # Lift should be pulling
+        # When lift is engaged, it returns velocity override
+        assert velocity_override == 2.0  # Lift speed override
 
     def test_compute_equipment_force_brake(self, project_with_equipment):
         """Test computing equipment force from brake."""
@@ -131,7 +133,7 @@ class TestEquipmentManager:
 
         # Run multiple steps to let brake engage
         for _ in range(20):
-            force = manager.compute_equipment_force(
+            force, velocity_override, breakdown = manager.compute_equipment_force(
                 train_path_id="path_1",
                 train_s=210.0,
                 train_velocity_mps=10.0,
@@ -140,6 +142,7 @@ class TestEquipmentManager:
             )
 
         assert force < 0.0  # Brake should be decelerating
+        assert velocity_override is None  # No lift engaged
 
     def test_compute_equipment_force_booster(self, project_with_equipment):
         """Test computing equipment force from booster."""
@@ -147,7 +150,7 @@ class TestEquipmentManager:
 
         manager.set_booster_mode("booster_1", BoosterMode.DRIVE)
 
-        force = manager.compute_equipment_force(
+        force, velocity_override, breakdown = manager.compute_equipment_force(
             train_path_id="path_1",
             train_s=255.0,
             train_velocity_mps=0.5,
@@ -156,13 +159,14 @@ class TestEquipmentManager:
         )
 
         assert force > 0.0  # Booster should be driving
+        assert velocity_override is None  # No lift engaged
 
     def test_compute_equipment_force_no_equipment(self):
         """Test computing force with no equipment."""
         project = Project(id="proj_1", name="Empty Project")
         manager = EquipmentManager(project)
 
-        force = manager.compute_equipment_force(
+        force, velocity_override, breakdown = manager.compute_equipment_force(
             train_path_id="path_1",
             train_s=50.0,
             train_velocity_mps=10.0,
@@ -171,12 +175,13 @@ class TestEquipmentManager:
         )
 
         assert force == 0.0
+        assert velocity_override is None
 
     def test_compute_equipment_force_wrong_path(self, project_with_equipment):
         """Test computing force when train is on different path."""
         manager = EquipmentManager(project_with_equipment)
 
-        force = manager.compute_equipment_force(
+        force, velocity_override, breakdown = manager.compute_equipment_force(
             train_path_id="path_2",
             train_s=50.0,
             train_velocity_mps=10.0,
@@ -185,6 +190,7 @@ class TestEquipmentManager:
         )
 
         assert force == 0.0
+        assert velocity_override is None
 
     def test_set_lsm_enabled(self, project_with_equipment):
         """Test enabling/disabling LSM."""

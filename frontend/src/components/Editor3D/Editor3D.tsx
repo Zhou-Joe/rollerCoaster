@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Grid, GizmoHelper, GizmoViewport, PerspectiveCamera } from '@react-three/drei';
 import { Suspense } from 'react';
@@ -6,8 +6,9 @@ import { TrackMesh } from '../TrackMesh';
 import { TrainMesh } from '../TrainMesh';
 import { EquipmentOverlay } from '../EquipmentOverlay';
 import { PointMarkers } from '../PointMarkers/PointMarkers';
+import { Scenery } from '../Scenery/Scenery';
 import { useProjectStore } from '../../state/projectStore';
-import { updateProject, getInterpolatedPath } from '../../api/client';
+import { updateProject, getInterpolatedPath, resetSimulator } from '../../api/client';
 import { Box, Text, Button, Tooltip } from '@mantine/core';
 import { IconRefresh } from '@tabler/icons-react';
 
@@ -24,6 +25,25 @@ export function Editor3D() {
   const [selectedPointId, setSelectedPointId] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Ensure all paths are loaded when simulation state changes
+  useEffect(() => {
+    if (!currentProject?.id || !simulationState) return;
+
+    // Check if any train is on a path we don't have loaded
+    for (const train of simulationState.trains) {
+      if (!interpolatedPaths.has(train.path_id)) {
+        console.log(`[DEBUG] Loading missing path: ${train.path_id}`);
+        getInterpolatedPath(currentProject.id, train.path_id)
+          .then(path => {
+            setInterpolatedPath(train.path_id, path);
+          })
+          .catch(err => {
+            console.error(`Failed to load path ${train.path_id}:`, err);
+          });
+      }
+    }
+  }, [simulationState?.trains, currentProject?.id, interpolatedPaths, setInterpolatedPath]);
 
   const handlePointMove = useCallback(async (pointId: string, position: { x: number; y: number; z: number }) => {
     if (!currentProject?.id) return;
@@ -42,13 +62,16 @@ export function Editor3D() {
   // Manual refresh function for track geometry
   const handleRefreshTrack = useCallback(async () => {
     if (!currentProject?.id) return;
-    
+
     setIsRefreshing(true);
     try {
       // Save current points to backend
       await updateProject(currentProject.id, { points: currentProject.points });
 
-      // Refresh interpolated paths
+      // Reset the simulator so it uses new geometry for physics calculations
+      await resetSimulator(currentProject.id);
+
+      // Refresh interpolated paths for 3D rendering
       for (const path of currentProject.paths) {
         try {
           const interpolated = await getInterpolatedPath(currentProject.id, path.id);
@@ -69,8 +92,9 @@ export function Editor3D() {
       style={{ width: '100%', height: '100%', position: 'relative' }}
       onClick={() => setSelectedPointId(null)}
     >
-      <Canvas shadows gl={{ antialias: true, alpha: false }} style={{ background: 'white' }}>
-        <color attach="background" args={['#ffffff']} />
+      <Canvas shadows gl={{ antialias: true, alpha: false }} style={{ background: 'linear-gradient(to bottom, #87CEEB, #B0E0E6)' }}>
+        <color attach="background" args={['#87CEEB']} />
+        <fog attach="fog" args={['#B0E0E6', 100, 400]} />
         <PerspectiveCamera makeDefault position={[50, 50, 50]} fov={50} />
         <OrbitControls
           makeDefault
@@ -91,19 +115,23 @@ export function Editor3D() {
         />
         <directionalLight position={[-50, 50, -50]} intensity={0.3} />
 
-        {/* Grid */}
+        {/* Scenery - grass ground and trees */}
+        <Scenery paths={interpolatedPaths} />
+
+        {/* Grid - semi-transparent to work with grass */}
         <Grid
           args={[200, 200]}
           cellSize={5}
-          cellThickness={0.5}
-          cellColor="#6b7280"
+          cellThickness={0.3}
+          cellColor="#888"
           sectionSize={20}
-          sectionThickness={1}
-          sectionColor="#374151"
-          fadeDistance={400}
+          sectionThickness={0.5}
+          sectionColor="#666"
+          fadeDistance={300}
           fadeStrength={1}
           followCamera={false}
           infiniteGrid
+          position={[0, 0.05, 0]}
         />
 
         {/* Axis helper */}
@@ -146,7 +174,12 @@ export function Editor3D() {
           {/* Train meshes */}
           {simulationState?.trains.map((trainState) => {
             const path = interpolatedPaths.get(trainState.path_id);
-            if (!path) return null;
+            if (!path) {
+              // Log missing path for debugging
+              console.warn(`[TrainMesh] Path ${trainState.path_id} not loaded, train ${trainState.train_id} will not render`);
+              // Path not loaded yet, will be loaded by useEffect
+              return null;
+            }
             return (
               <TrainMesh
                 key={trainState.train_id}

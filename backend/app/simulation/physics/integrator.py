@@ -66,6 +66,11 @@ class PhysicsSimulator:
         # Initialize train states
         self._initialize_train_states()
 
+        # Debug: Log junction info
+        # print(f"[DEBUG] Simulator initialized with {len(self.project.junctions)} junctions:")
+        # for j in self.project.junctions:
+        #     print(f"[DEBUG]   Junction {j.id}: incoming={j.incoming_path_id}, outgoing={j.outgoing_path_ids}")
+
     def _initialize_train_states(self) -> None:
         """Create initial physics states for all trains."""
         for train in self.project.trains:
@@ -137,18 +142,27 @@ class PhysicsSimulator:
         )
 
         if sample is None:
-            # Train not on valid geometry - skip
+            # Train not on valid geometry - this is a critical error
+            print(f"[ERROR] No geometry found for train {state.train_id} on path {state.path_id} at s={state.s_front_m}")
+            # Try to get the path to see if it exists
+            try:
+                path_data = self.geometry_cache.get_path(state.path_id)
+                print(f"[ERROR] Path {state.path_id} exists with length {path_data.total_length}, samples={len(path_data.samples)}")
+            except Exception as e:
+                print(f"[ERROR] Path {state.path_id} not found in geometry cache: {e}")
             return
 
         # Compute equipment force and any velocity override (e.g., from lift)
         equipment_force_n = 0.0
         lift_velocity_override = None
+        equipment_breakdown = None
         if self.equipment_manager:
-            equipment_force_n, lift_velocity_override = self.equipment_manager.compute_equipment_force(
+            equipment_force_n, lift_velocity_override, equipment_breakdown = self.equipment_manager.compute_equipment_force(
                 train_path_id=state.path_id,
                 train_s=state.s_front_m,
                 train_velocity_mps=state.velocity_mps,
                 train_mass_kg=state.mass_kg,
+                train_id=state.train_id,
                 dt=dt
             )
 
@@ -159,19 +173,40 @@ class PhysicsSimulator:
             new_s_front = state.s_front_m + new_velocity * dt
 
             # Get path length for boundary checking
+            original_path_id = state.path_id
             try:
                 path_data = self.geometry_cache.get_path(state.path_id)
                 max_s = path_data.total_length
             except (ValueError, KeyError):
                 max_s = float('inf')
 
-            # Clamp to path bounds
-            if new_s_front > max_s:
-                new_s_front = max_s
-                new_velocity = 0.0
+            # Check for junction transition (forward only - lift doesn't go backward)
+            if new_s_front >= max_s:
+                new_s_front = self._check_junction_transition(state, new_s_front, max_s, new_velocity)
+                if state.path_id == original_path_id and new_s_front >= max_s:
+                    new_velocity = 0.0
+                # Get geometry from new path if transition happened
+                if state.path_id != original_path_id:
+                    # print(f"[DEBUG] Lift mode: path changed from {original_path_id} to {state.path_id}")
+                    new_sample = get_geometry_at_position(
+                        self.geometry_cache,
+                        state.path_id,
+                        new_s_front
+                    )
+                    if new_sample is not None:
+                        sample = new_sample
             elif new_s_front < 0:
+                # Clamp to start (shouldn't happen on lift, but safety check)
                 new_s_front = 0.0
                 new_velocity = 0.0
+
+            current_sample = get_geometry_at_position(
+                self.geometry_cache,
+                state.path_id,
+                new_s_front
+            )
+            if current_sample is not None:
+                sample = current_sample
 
             # Compute g-forces at new position
             gforces = compute_gforces(
@@ -207,6 +242,19 @@ class PhysicsSimulator:
             state.potential_energy_j = potential_energy
             state.total_energy_j = kinetic_energy + potential_energy
 
+            # Update equipment force breakdown for lift mode
+            if equipment_breakdown:
+                from .types import EquipmentForceBreakdown
+                state.equipment_forces = EquipmentForceBreakdown(
+                    lsm_force_n=equipment_breakdown.lsm_force_n,
+                    lift_force_n=equipment_breakdown.lift_force_n,
+                    brake_force_n=equipment_breakdown.brake_force_n,
+                    booster_force_n=equipment_breakdown.booster_force_n,
+                    trim_force_n=equipment_breakdown.trim_force_n,
+                    lsm_stators_active=equipment_breakdown.lsm_stators_active,
+                    lsm_overlap_ratio=equipment_breakdown.lsm_overlap_ratio
+                )
+
             # Skip normal physics - lift controls everything
             return
 
@@ -229,19 +277,11 @@ class PhysicsSimulator:
         # Update velocity - allow negative velocity for rollback
         new_velocity = state.velocity_mps + acceleration * dt
 
-        # Only clamp to zero if trying to reverse at boundaries
-        # Allow rollback on slopes when gravity pulls backward
-        if new_velocity < 0:
-            # Check if we're at the start of the path
-            if state.s_front_m <= 0.1:
-                new_velocity = 0.0
-                acceleration = 0.0
-            # Otherwise allow negative velocity (rollback)
+        # Advance distance with constant-acceleration kinematics for this step.
+        new_s_front = state.s_front_m + state.velocity_mps * dt + 0.5 * acceleration * dt * dt
 
-        # Update position - handle negative velocity (backward movement)
-        new_s_front = state.s_front_m + new_velocity * dt
-
-        # Clamp to path bounds
+        # Get path length for boundary checking
+        original_path_id = state.path_id
         try:
             path_data = self.geometry_cache.get_path(state.path_id)
             max_s = path_data.total_length
@@ -249,7 +289,40 @@ class PhysicsSimulator:
             max_s = float('inf')
 
         # Check for junction/switch at path boundary
-        new_s_front = self._check_junction_transition(state, new_s_front, max_s)
+        # This may update state.path_id and return adjusted position
+        new_s_front = self._check_junction_transition(state, new_s_front, max_s, new_velocity)
+
+        # After junction transition, get geometry from the NEW path
+        if state.path_id != original_path_id:
+            # Path changed due to junction transition - get new geometry
+            # print(f"[DEBUG] Path changed from {original_path_id} to {state.path_id}, getting new geometry at s={new_s_front}")
+            new_sample = get_geometry_at_position(
+                self.geometry_cache,
+                state.path_id,
+                new_s_front
+            )
+            if new_sample is not None:
+                sample = new_sample
+            else:
+                print(f"[DEBUG] WARNING: Failed to get geometry for new path {state.path_id} at s={new_s_front}")
+        else:
+            if new_velocity > 0 and new_s_front >= max_s:
+                new_velocity = 0.0
+                acceleration = 0.0
+            # Check if we're stuck at a boundary with no junction
+            if new_velocity < 0 and new_s_front <= 0.01:
+                # Train is at start of path with backward velocity but no junction transition
+                # print(f"[DEBUG] Train stuck at start of {state.path_id}, stopping backward motion")
+                new_velocity = 0.0
+                acceleration = 0.0
+
+        current_sample = get_geometry_at_position(
+            self.geometry_cache,
+            state.path_id,
+            new_s_front
+        )
+        if current_sample is not None:
+            sample = current_sample
 
         # Compute g-forces
         gforces = compute_gforces(
@@ -280,6 +353,23 @@ class PhysicsSimulator:
         state.potential_energy_j = potential_energy
         state.total_energy_j = kinetic_energy + potential_energy
 
+        # Update equipment force breakdown
+        if equipment_breakdown:
+            from .types import EquipmentForceBreakdown
+            state.equipment_forces = EquipmentForceBreakdown(
+                lsm_force_n=equipment_breakdown.lsm_force_n,
+                lift_force_n=equipment_breakdown.lift_force_n,
+                brake_force_n=equipment_breakdown.brake_force_n,
+                booster_force_n=equipment_breakdown.booster_force_n,
+                trim_force_n=equipment_breakdown.trim_force_n,
+                lsm_stators_active=equipment_breakdown.lsm_stators_active,
+                lsm_overlap_ratio=equipment_breakdown.lsm_overlap_ratio
+            )
+
+        # Debug: Log state after junction transition
+        # if state.path_id != original_path_id:
+        #     print(f"[DEBUG] Train {state.train_id} state after transition: path={state.path_id}, s={state.s_front_m:.2f}, v={state.velocity_mps:.2f}")
+
     def run(self, duration_s: float, dt: Optional[float] = None) -> List[PhysicsStepResult]:
         """
         Run simulation for a duration.
@@ -304,14 +394,22 @@ class PhysicsSimulator:
 
         return results
 
-    def _check_junction_transition(self, state: TrainPhysicsState, new_s_front: float, max_s: float) -> float:
+    def _check_junction_transition(self, state: TrainPhysicsState, new_s_front: float, max_s: float, velocity: float) -> float:
         """
         Check if train has reached a junction and handle path transition.
 
+        Handles both forward transitions (train reaches end of path) and
+        backward transitions (train reverses past start of path).
+
         Returns the adjusted position (new_s_front or offset into new path).
         """
-        # Check if we've passed the end of the current path
+        # Get train length for position validation
+        train = next((t for t in self.project.trains if t.id == state.train_id), None)
+        train_length = compute_train_length(train, list(self.vehicle_map.values())) if train else 10.0
+
+        # Check if we've passed the end of the current path (forward movement)
         if new_s_front >= max_s:
+            # print(f"[DEBUG] Train {state.train_id} at end of path {state.path_id}: s={new_s_front}, max_s={max_s}")
             # Look for a junction at the end of this path
             for junction in self.project.junctions:
                 if junction.incoming_path_id == state.path_id:
@@ -333,13 +431,61 @@ class PhysicsSimulator:
                     # Use switch alignment if available, otherwise take first path
                     selected_path = switch_alignment if switch_alignment and switch_alignment in outgoing_paths else outgoing_paths[0]
 
-                    # Transition to new path
+                    # Get new path length
+                    try:
+                        new_path_data = self.geometry_cache.get_path(selected_path)
+                        new_path_max_s = new_path_data.total_length
+                    except (ValueError, KeyError):
+                        new_path_max_s = 1000.0
+
+                    # Transition to new path - position train so all vehicles are on new path
                     overshoot = new_s_front - max_s
+                    # Ensure position is at least train_length so rear is at valid position
+                    new_position = max(train_length + 0.1, overshoot)
+
+                    # print(f"[DEBUG] Forward transition: {state.path_id} -> {selected_path}, pos={new_position}")
                     state.path_id = selected_path
-                    return overshoot
+                    return new_position
 
             # No junction found, stop at boundary
+            # print(f"[DEBUG] No junction found for forward transition from {state.path_id}")
             return max_s
+
+        # Check if we've passed the start of the current path (backward movement)
+        if new_s_front < 0:
+            # print(f"[DEBUG] Backward junction check: train {state.train_id} at s={new_s_front} on path {state.path_id}")
+            # print(f"[DEBUG] Current velocity: {velocity}")
+            # print(f"[DEBUG] Looking for junction where '{state.path_id}' is an outgoing path...")
+            # Look for a junction where current path is an outgoing path
+            found_junction = False
+            for junction in self.project.junctions:
+                if state.path_id in junction.outgoing_path_ids:
+                    found_junction = True
+                    # Transition back to the incoming path
+                    incoming_path_id = junction.incoming_path_id
+
+                    # Get the length of the incoming path to position from its end
+                    try:
+                        incoming_path_data = self.geometry_cache.get_path(incoming_path_id)
+                        incoming_max_s = incoming_path_data.total_length
+                    except (ValueError, KeyError) as e:
+                        # print(f"[DEBUG] Failed to get incoming path {incoming_path_id}: {e}")
+                        incoming_max_s = 1000.0  # fallback
+
+                    # Position at end of incoming path, ensuring train is fully on path
+                    # new_s_front is negative (how far past start we went)
+                    new_position = incoming_max_s + new_s_front  # near end of incoming path
+                    # Ensure position doesn't go past path end
+                    new_position = min(incoming_max_s - 0.1, new_position)
+                    new_position = max(train_length, new_position)  # ensure rear is valid
+
+                    # print(f"[DEBUG] Backward transition: {state.path_id} -> {incoming_path_id}, pos={new_position}, incoming_max_s={incoming_max_s}")
+                    state.path_id = incoming_path_id
+                    return new_position
+
+            # No junction found, stop at boundary
+            # print(f"[DEBUG] No junction found for backward transition from {state.path_id}, found_junction={found_junction}")
+            return 0.0
 
         return new_s_front
 

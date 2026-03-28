@@ -18,16 +18,48 @@ ForceCurve = List[ForceCurvePoint]
 
 
 class LSMLaunch(BaseModel):
+    """Linear Synchronous Motor launch system.
+
+    The LSM consists of multiple stator segments along the track that generate
+    traveling magnetic waves to push against permanent magnets on vehicles.
+
+    Force is calculated based on overlap between vehicle magnets and track stators,
+    with electromagnetic parameters determining the force per stator.
+    """
     equipment_type: EquipmentType = EquipmentType.LSM_LAUNCH
     id: str
     path_id: str
-    start_s: float
-    end_s: float
-    stator_count: int
-    magnetic_field_strength: float
-    max_force_n: float
-    force_curve: Optional[ForceCurve] = None
+    start_s: float  # Start position on path (arc length)
+    end_s: float  # End position on path (arc length)
+
+    # Stator configuration
+    stator_count: int  # Number of stator segments
+    stator_length_m: float = 1.5  # Length of each stator segment (default 1.5m)
+    stator_spacing_m: Optional[float] = None  # Center-to-center spacing (auto-calculated if None)
+
+    # Electromagnetic parameters
+    # Force equation: F = B * I * L * efficiency
+    # Where B = magnetic field (Tesla), I = current (Amps), L = active length (m)
+    magnetic_field_tesla: float = 1.2  # Permanent magnet field strength (typical NdFeB: 1.0-1.4 T)
+    max_current_amps: float = 500.0  # Maximum stator current
+    active_length_m: float = 0.3  # Effective magnetic interaction length per stator
+    efficiency: float = 0.85  # System efficiency (losses due to gap, eddy currents, etc.)
+
+    # Derived/calculated values
+    max_force_per_stator_n: Optional[float] = None  # Auto-calculated if None: B * I * L * efficiency
+
+    # Speed effects
+    max_speed_mps: float = 50.0  # Design max speed (force drops to zero approaching this)
+    back_emf_factor: float = 0.02  # Back-EMF coefficient (V per m/s)
+
+    # Control
+    target_launch_velocity_mps: Optional[float] = None  # Target exit velocity
     enabled: bool = True
+
+    # Legacy support (for backward compatibility)
+    max_force_n: Optional[float] = None  # Total max force (deprecated, use electromagnetic params)
+    magnetic_field_strength: Optional[float] = None  # Deprecated (renamed to magnetic_field_tesla)
+    force_curve: Optional[ForceCurve] = None  # Custom force curve override
 
 
 class Lift(BaseModel):

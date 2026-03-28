@@ -107,9 +107,12 @@ def get_geometry_at_position(
         # Clamp s to path bounds
         s = max(0.0, min(s, path_data.total_length))
 
-        # Find closest sample
-        closest = min(path_data.samples, key=lambda sp: abs(sp.s - s))
-        return closest
+        # O(1) index calculation - samples are evenly spaced by resolution_m
+        idx = int(s / path_data.resolution_m)
+        if idx >= len(path_data.samples):
+            idx = len(path_data.samples) - 1
+
+        return path_data.samples[idx]
 
     except (ValueError, KeyError):
         return None

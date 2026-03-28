@@ -2,6 +2,7 @@ import { Box, Text, Group, Badge, Divider, Tabs } from '@mantine/core';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { useEffect, useRef, useState } from 'react';
 import type { SimulationState, InterpolatedPath } from '../../types';
+import { computeTrainKinematics } from '../../utils/trainKinematics';
 
 interface SimulationPanelProps {
   simulationState: SimulationState;
@@ -15,47 +16,87 @@ interface HistoryPoint {
   vy: number;
   vz: number;
   vTotal: number;
-  ax: number;
-  ay: number;
-  az: number;
+  aForeAft: number;
+  aRightLeft: number;
+  aEyeUpDown: number;
   aTotal: number;
   kineticJ: number;
   potentialJ: number;
   totalJ: number;
+  // Equipment forces
+  lsmForceN: number;
+  liftForceN: number;
+  brakeForceN: number;
+  equipmentForceN: number;
 }
 
 const MAX_HISTORY_POINTS = 200;
 
-/**
- * Find a sample point on the path at a given arc length position
- */
-function findPointAtS(path: InterpolatedPath, s: number) {
-  for (let i = 0; i < path.points.length - 1; i++) {
-    const p1 = path.points[i];
-    const p2 = path.points[i + 1];
-    if (p1.s <= s && p2.s >= s) {
-      const t = (s - p1.s) / (p2.s - p1.s);
-      return {
-        position: [
-          p1.position[0] + t * (p2.position[0] - p1.position[0]),
-          p1.position[1] + t * (p2.position[1] - p1.position[1]),
-          p1.position[2] + t * (p2.position[2] - p1.position[2]),
-        ] as [number, number, number],
-        tangent: [
-          p1.tangent[0] + t * (p2.tangent[0] - p1.tangent[0]),
-          p1.tangent[1] + t * (p2.tangent[1] - p1.tangent[1]),
-          p1.tangent[2] + t * (p2.tangent[2] - p1.tangent[2]),
-        ] as [number, number, number],
-        normal: [
-          p1.normal[0] + t * (p2.normal[0] - p1.normal[0]),
-          p1.normal[1] + t * (p2.normal[1] - p1.normal[1]),
-          p1.normal[2] + t * (p2.normal[2] - p1.normal[2]),
-        ] as [number, number, number],
-        curvature: p1.curvature + t * (p2.curvature - p1.curvature),
-      };
-    }
-  }
-  return path.points.find((p) => Math.abs(p.s - s) < 0.5);
+// Chart wrapper component that ensures container has dimensions
+function ChartWrapper({ data, lines, yAxisFormatter }: {
+  data: HistoryPoint[];
+  lines: { dataKey: string; stroke: string; name: string; strokeWidth?: number }[];
+  yAxisFormatter?: (value: number) => string;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const { width, height } = entry.contentRect;
+        if (width > 0 && height > 0) {
+          setDimensions({ width, height });
+        }
+      }
+    });
+
+    resizeObserver.observe(container);
+    return () => resizeObserver.disconnect();
+  }, []);
+
+  const { width, height } = dimensions;
+
+  return (
+    <Box ref={containerRef} style={{ height: 150, background: '#1a1a1a', borderRadius: 4, padding: 4, minWidth: 200 }}>
+      {width > 0 && height > 0 && data.length > 0 && (
+        <ResponsiveContainer width={width} height={height}>
+          <LineChart data={data} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#333" />
+            <XAxis
+              dataKey="time"
+              tick={{ fontSize: 10, fill: '#888' }}
+              stroke="#444"
+              tickFormatter={(value) => value.toFixed(1)}
+              label={{ value: 'Time (s)', position: 'insideBottom', offset: -2, fontSize: 10, fill: '#888' }}
+            />
+            <YAxis tick={{ fontSize: 10, fill: '#888' }} stroke="#444" tickFormatter={yAxisFormatter} />
+            <Tooltip
+              contentStyle={{ background: '#2a2a2a', border: '1px solid #444', fontSize: 11 }}
+              labelStyle={{ color: '#fff' }}
+              formatter={(value) => [(value as number).toFixed(3), '']}
+              labelFormatter={(label) => `Time: ${(label as number).toFixed(2)}s`}
+            />
+            <Legend wrapperStyle={{ fontSize: 10 }} />
+            {lines.map((line) => (
+              <Line
+                key={line.dataKey}
+                type="monotone"
+                dataKey={line.dataKey}
+                stroke={line.stroke}
+                dot={false}
+                strokeWidth={line.strokeWidth || 1.5}
+                name={line.name}
+              />
+            ))}
+          </LineChart>
+        </ResponsiveContainer>
+      )}
+    </Box>
+  );
 }
 
 // Train history card component
@@ -64,39 +105,8 @@ function TrainCard({ train, path, history }: {
   path: InterpolatedPath | undefined;
   history: HistoryPoint[];
 }) {
-  const geometryPoint = train && path ? findPointAtS(path, train.s_front_m) : null;
-
-  // Compute world coordinate velocity components
-  const worldVelocity = geometryPoint ? {
-    x: train.velocity_mps * geometryPoint.tangent[0],
-    y: train.velocity_mps * geometryPoint.tangent[1],
-    z: train.velocity_mps * geometryPoint.tangent[2],
-  } : { x: 0, y: 0, z: 0 };
-
-  // Compute world coordinate acceleration components
-  const tangentAccel = geometryPoint ? {
-    x: train.acceleration_mps2 * geometryPoint.tangent[0],
-    y: train.acceleration_mps2 * geometryPoint.tangent[1],
-    z: train.acceleration_mps2 * geometryPoint.tangent[2],
-  } : { x: 0, y: 0, z: 0 };
-
-  const centripetalMag = geometryPoint ? train.velocity_mps * train.velocity_mps * geometryPoint.curvature : 0;
-  const centripetalAccel = geometryPoint ? {
-    x: -centripetalMag * geometryPoint.normal[0],
-    y: -centripetalMag * geometryPoint.normal[1],
-    z: -centripetalMag * geometryPoint.normal[2],
-  } : { x: 0, y: 0, z: 0 };
-
-  const worldAccel = {
-    x: tangentAccel.x + centripetalAccel.x,
-    y: tangentAccel.y + centripetalAccel.y,
-    z: tangentAccel.z + centripetalAccel.z,
-  };
-
-  const totalAccel = Math.sqrt(worldAccel.x**2 + worldAccel.y**2 + worldAccel.z**2);
-
-  // Position
-  const position = geometryPoint?.position || [0, 0, 0] as [number, number, number];
+  const { worldVelocity, localAcceleration, totalWorldAcceleration: totalAccel, position } =
+    computeTrainKinematics(path, train.s_front_m, train.velocity_mps, train.acceleration_mps2);
   const distance = train.s_front_m;
 
   return (
@@ -121,18 +131,18 @@ function TrainCard({ train, path, history }: {
       </Box>
 
       {/* Acceleration Table */}
-      <Text size="xs" c="gray.4" mb={4}>Acceleration (m/s²) - World Coordinates</Text>
+      <Text size="xs" c="gray.4" mb={4}>Acceleration (m/s²) - Train Coordinates</Text>
       <Box style={{ fontSize: '11px' }} mb="xs">
         <Box style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #444', paddingBottom: 2, marginBottom: 2 }}>
-          <Text size="xs" c="gray.5" style={{ width: '25%' }}>Ax</Text>
-          <Text size="xs" c="gray.5" style={{ width: '25%' }}>Ay</Text>
-          <Text size="xs" c="gray.5" style={{ width: '25%' }}>Az</Text>
+          <Text size="xs" c="gray.5" style={{ width: '25%' }}>Fore/Aft</Text>
+          <Text size="xs" c="gray.5" style={{ width: '25%' }}>Right/Left</Text>
+          <Text size="xs" c="gray.5" style={{ width: '25%' }}>Eye Up/Down</Text>
           <Text size="xs" c="gray.5" style={{ width: '25%', textAlign: 'right' }}>|A|</Text>
         </Box>
         <Box style={{ display: 'flex', justifyContent: 'space-between' }}>
-          <Text size="xs" style={{ width: '25%', color: getAccelColor(worldAccel.x), fontFamily: 'monospace' }}>{worldAccel.x.toFixed(2)}</Text>
-          <Text size="xs" style={{ width: '25%', color: getAccelColor(worldAccel.y), fontFamily: 'monospace' }}>{worldAccel.y.toFixed(2)}</Text>
-          <Text size="xs" style={{ width: '25%', color: getAccelColor(worldAccel.z), fontFamily: 'monospace' }}>{worldAccel.z.toFixed(2)}</Text>
+          <Text size="xs" style={{ width: '25%', color: getAccelColor(localAcceleration.foreAft), fontFamily: 'monospace' }}>{localAcceleration.foreAft.toFixed(2)}</Text>
+          <Text size="xs" style={{ width: '25%', color: getAccelColor(localAcceleration.rightLeft), fontFamily: 'monospace' }}>{localAcceleration.rightLeft.toFixed(2)}</Text>
+          <Text size="xs" style={{ width: '25%', color: getAccelColor(localAcceleration.eyeUpDown), fontFamily: 'monospace' }}>{localAcceleration.eyeUpDown.toFixed(2)}</Text>
           <Text size="xs" style={{ width: '25%', color: getAccelColor(totalAccel), fontFamily: 'monospace', fontWeight: 600, textAlign: 'right' }}>{totalAccel.toFixed(2)}</Text>
         </Box>
       </Box>
@@ -177,9 +187,10 @@ function TrainCard({ train, path, history }: {
 
       <Divider my="xs" color="#444" />
 
-      {/* G-Forces summary */}
+      {/* G-Forces and Acceleration comparison */}
       <Group gap="xs">
         <Badge size="xs" variant="light" color="blue">G: {train.gforces.resultant_g.toFixed(2)}</Badge>
+        <Badge size="xs" variant="light" color="orange">|A|: {totalAccel.toFixed(2)} m/s²</Badge>
         <Badge size="xs" variant="light" color="cyan">Mass: {(train.mass_kg / 1000).toFixed(1)}t</Badge>
       </Group>
 
@@ -187,98 +198,61 @@ function TrainCard({ train, path, history }: {
 
       {/* Charts */}
       <Text size="xs" c="gray.4" mb="xs">History Plots</Text>
-      
+
       <Tabs defaultValue="velocity">
         <Tabs.List>
           <Tabs.Tab value="velocity" style={{ fontSize: '11px', padding: '4px 8px' }}>Velocity</Tabs.Tab>
           <Tabs.Tab value="accel" style={{ fontSize: '11px', padding: '4px 8px' }}>Acceleration</Tabs.Tab>
           <Tabs.Tab value="energy" style={{ fontSize: '11px', padding: '4px 8px' }}>Energy</Tabs.Tab>
+          <Tabs.Tab value="equip" style={{ fontSize: '11px', padding: '4px 8px' }}>Equipment</Tabs.Tab>
         </Tabs.List>
 
         <Tabs.Panel value="velocity" pt="xs">
-          <Box style={{ height: 150, background: '#1a1a1a', borderRadius: 4, padding: 4 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={history} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-                <XAxis
-                  dataKey="time"
-                  tick={{ fontSize: 10, fill: '#888' }}
-                  stroke="#444"
-                  tickFormatter={(value) => value.toFixed(1)}
-                  label={{ value: 'Time (s)', position: 'insideBottom', offset: -2, fontSize: 10, fill: '#888' }}
-                />
-                <YAxis tick={{ fontSize: 10, fill: '#888' }} stroke="#444" />
-                <Tooltip
-                  contentStyle={{ background: '#2a2a2a', border: '1px solid #444', fontSize: 11 }}
-                  labelStyle={{ color: '#fff' }}
-                  formatter={(value) => [(value as number).toFixed(3), '']}
-                  labelFormatter={(label) => `Time: ${(label as number).toFixed(2)}s`}
-                />
-                <Legend wrapperStyle={{ fontSize: 10 }} />
-                <Line type="monotone" dataKey="vx" stroke="#ff6b6b" dot={false} strokeWidth={1.5} name="Vx" />
-                <Line type="monotone" dataKey="vy" stroke="#69db7c" dot={false} strokeWidth={1.5} name="Vy" />
-                <Line type="monotone" dataKey="vz" stroke="#74c0fc" dot={false} strokeWidth={1.5} name="Vz" />
-                <Line type="monotone" dataKey="vTotal" stroke="#ffd43b" dot={false} strokeWidth={2} name="V" />
-              </LineChart>
-            </ResponsiveContainer>
-          </Box>
+          <ChartWrapper
+            data={history}
+            lines={[
+              { dataKey: 'vx', stroke: '#ff6b6b', name: 'Vx' },
+              { dataKey: 'vy', stroke: '#69db7c', name: 'Vy' },
+              { dataKey: 'vz', stroke: '#74c0fc', name: 'Vz' },
+              { dataKey: 'vTotal', stroke: '#ffd43b', name: 'V', strokeWidth: 2 },
+            ]}
+          />
         </Tabs.Panel>
 
         <Tabs.Panel value="accel" pt="xs">
-          <Box style={{ height: 150, background: '#1a1a1a', borderRadius: 4, padding: 4 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={history} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-                <XAxis
-                  dataKey="time"
-                  tick={{ fontSize: 10, fill: '#888' }}
-                  stroke="#444"
-                  tickFormatter={(value) => value.toFixed(1)}
-                  label={{ value: 'Time (s)', position: 'insideBottom', offset: -2, fontSize: 10, fill: '#888' }}
-                />
-                <YAxis tick={{ fontSize: 10, fill: '#888' }} stroke="#444" />
-                <Tooltip
-                  contentStyle={{ background: '#2a2a2a', border: '1px solid #444', fontSize: 11 }}
-                  labelStyle={{ color: '#fff' }}
-                  formatter={(value) => [(value as number).toFixed(3), '']}
-                  labelFormatter={(label) => `Time: ${(label as number).toFixed(2)}s`}
-                />
-                <Legend wrapperStyle={{ fontSize: 10 }} />
-                <Line type="monotone" dataKey="ax" stroke="#ff6b6b" dot={false} strokeWidth={1.5} name="Ax" />
-                <Line type="monotone" dataKey="ay" stroke="#69db7c" dot={false} strokeWidth={1.5} name="Ay" />
-                <Line type="monotone" dataKey="az" stroke="#74c0fc" dot={false} strokeWidth={1.5} name="Az" />
-                <Line type="monotone" dataKey="aTotal" stroke="#ffd43b" dot={false} strokeWidth={2} name="|A|" />
-              </LineChart>
-            </ResponsiveContainer>
-          </Box>
+          <ChartWrapper
+            data={history}
+            lines={[
+              { dataKey: 'aForeAft', stroke: '#ff6b6b', name: 'Fore/Aft' },
+              { dataKey: 'aRightLeft', stroke: '#69db7c', name: 'Right/Left' },
+              { dataKey: 'aEyeUpDown', stroke: '#74c0fc', name: 'Eye Up/Down' },
+            ]}
+          />
         </Tabs.Panel>
 
         <Tabs.Panel value="energy" pt="xs">
-          <Box style={{ height: 150, background: '#1a1a1a', borderRadius: 4, padding: 4 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={history} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-                <XAxis
-                  dataKey="time"
-                  tick={{ fontSize: 10, fill: '#888' }}
-                  stroke="#444"
-                  tickFormatter={(value) => value.toFixed(1)}
-                  label={{ value: 'Time (s)', position: 'insideBottom', offset: -2, fontSize: 10, fill: '#888' }}
-                />
-                <YAxis tick={{ fontSize: 10, fill: '#888' }} stroke="#444" />
-                <Tooltip
-                  contentStyle={{ background: '#2a2a2a', border: '1px solid #444', fontSize: 11 }}
-                  labelStyle={{ color: '#fff' }}
-                  formatter={(value) => [`${((value as number) / 1000).toFixed(2)} kJ`, '']}
-                  labelFormatter={(label) => `Time: ${(label as number).toFixed(2)}s`}
-                />
-                <Legend wrapperStyle={{ fontSize: 10 }} />
-                <Line type="monotone" dataKey="kineticJ" stroke="#69db7c" dot={false} strokeWidth={1.5} name="Kinetic" />
-                <Line type="monotone" dataKey="potentialJ" stroke="#74c0fc" dot={false} strokeWidth={1.5} name="Potential" />
-                <Line type="monotone" dataKey="totalJ" stroke="#ffd43b" dot={false} strokeWidth={2} name="Total" />
-              </LineChart>
-            </ResponsiveContainer>
-          </Box>
+          <ChartWrapper
+            data={history}
+            lines={[
+              { dataKey: 'kineticJ', stroke: '#69db7c', name: 'Kinetic' },
+              { dataKey: 'potentialJ', stroke: '#74c0fc', name: 'Potential' },
+              { dataKey: 'totalJ', stroke: '#ffd43b', name: 'Total', strokeWidth: 2 },
+            ]}
+            yAxisFormatter={(value) => `${(value / 1000).toFixed(1)}k`}
+          />
+        </Tabs.Panel>
+
+        <Tabs.Panel value="equip" pt="xs">
+          <ChartWrapper
+            data={history}
+            lines={[
+              { dataKey: 'lsmForceN', stroke: '#69db7c', name: 'LSM' },
+              { dataKey: 'liftForceN', stroke: '#74c0fc', name: 'Lift' },
+              { dataKey: 'brakeForceN', stroke: '#ff8787', name: 'Brake' },
+              { dataKey: 'equipmentForceN', stroke: '#ffd43b', name: 'Total Equip', strokeWidth: 2 },
+            ]}
+            yAxisFormatter={(value) => `${(value / 1000).toFixed(1)}k`}
+          />
         </Tabs.Panel>
       </Tabs>
     </Box>
@@ -300,41 +274,16 @@ export function SimulationPanel({ simulationState, interpolatedPaths }: Simulati
 
     trains.forEach((train) => {
       const path = interpolatedPaths.get(train.path_id);
-      const geometryPoint = train && path ? findPointAtS(path, train.s_front_m) : null;
-
-      // Compute world coordinate velocity components
-      const worldVelocity = geometryPoint ? {
-        x: train.velocity_mps * geometryPoint.tangent[0],
-        y: train.velocity_mps * geometryPoint.tangent[1],
-        z: train.velocity_mps * geometryPoint.tangent[2],
-      } : { x: 0, y: 0, z: 0 };
-
-      // Compute world coordinate acceleration components
-      const tangentAccel = geometryPoint ? {
-        x: train.acceleration_mps2 * geometryPoint.tangent[0],
-        y: train.acceleration_mps2 * geometryPoint.tangent[1],
-        z: train.acceleration_mps2 * geometryPoint.tangent[2],
-      } : { x: 0, y: 0, z: 0 };
-
-      const centripetalMag = geometryPoint ? train.velocity_mps * train.velocity_mps * geometryPoint.curvature : 0;
-      const centripetalAccel = geometryPoint ? {
-        x: -centripetalMag * geometryPoint.normal[0],
-        y: -centripetalMag * geometryPoint.normal[1],
-        z: -centripetalMag * geometryPoint.normal[2],
-      } : { x: 0, y: 0, z: 0 };
-
-      const worldAccel = {
-        x: tangentAccel.x + centripetalAccel.x,
-        y: tangentAccel.y + centripetalAccel.y,
-        z: tangentAccel.z + centripetalAccel.z,
-      };
-
-      const totalAccel = Math.sqrt(worldAccel.x**2 + worldAccel.y**2 + worldAccel.z**2);
+      const {
+        worldVelocity,
+        localAcceleration,
+        totalWorldAcceleration: totalAccel,
+      } = computeTrainKinematics(path, train.s_front_m, train.velocity_mps, train.acceleration_mps2);
 
       // Only add point if time has advanced
       if (time_s > prevTimeRef.current) {
         updated = true;
-        
+
         const existingHistory = newHistories.get(train.train_id) || [];
         const newHistory = [...existingHistory, {
           time: time_s,
@@ -342,13 +291,18 @@ export function SimulationPanel({ simulationState, interpolatedPaths }: Simulati
           vy: worldVelocity.y,
           vz: worldVelocity.z,
           vTotal: train.velocity_mps, // Use signed velocity instead of absolute
-          ax: worldAccel.x,
-          ay: worldAccel.y,
-          az: worldAccel.z,
+          aForeAft: localAcceleration.foreAft,
+          aRightLeft: localAcceleration.rightLeft,
+          aEyeUpDown: localAcceleration.eyeUpDown,
           aTotal: totalAccel,
           kineticJ: train.energy?.kinetic_j ?? 0,
           potentialJ: train.energy?.potential_j ?? 0,
           totalJ: train.energy?.total_j ?? 0,
+          // Equipment forces
+          lsmForceN: train.equipment_forces?.lsm_force_n ?? 0,
+          liftForceN: train.equipment_forces?.lift_force_n ?? 0,
+          brakeForceN: train.equipment_forces?.brake_force_n ?? 0,
+          equipmentForceN: train.forces.equipment_n,
         }];
 
         // Limit history size
@@ -393,7 +347,7 @@ export function SimulationPanel({ simulationState, interpolatedPaths }: Simulati
       {/* Coordinate system info */}
       <Box p="xs" style={{ background: '#1e3a5f', borderRadius: 4 }} mb="sm">
         <Text size="xs" c="gray.3">
-          <strong>World Coordinates:</strong> X=Right, Y=Up, Z=Forward (global 3D space)
+          <strong>Velocity:</strong> world coordinates. <strong>Acceleration:</strong> train coordinates with +Fore, +Right, +Eye Up.
         </Text>
       </Box>
 

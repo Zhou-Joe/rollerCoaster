@@ -46,6 +46,15 @@ export interface TrainPhysicsState {
     equipment_n: number;
     total_n: number;
   };
+  equipment_forces?: {
+    lsm_force_n: number;
+    lift_force_n: number;
+    brake_force_n: number;
+    booster_force_n: number;
+    trim_force_n: number;
+    lsm_stators_active: number;
+    lsm_overlap_ratio: number;
+  };
   gforces: {
     normal_g: number;
     lateral_g: number;
@@ -151,7 +160,7 @@ export interface LSMLaunch extends EquipmentBase {
 
 export interface Lift extends EquipmentBase {
   equipment_type: 'lift';
-  chain_speed_mps?: number;
+  lift_speed_mps?: number;
   max_pull_force_n?: number;
   engagement_point_s?: number;
   release_point_s?: number;

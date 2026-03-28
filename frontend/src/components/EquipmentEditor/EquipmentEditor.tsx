@@ -14,12 +14,19 @@ interface EquipmentForm {
   path_id: string;
   start_s: number;
   end_s: number;
-  // LSM
+  // LSM - Electromagnetic parameters
   stator_count?: number;
+  stator_length_m?: number;
+  magnetic_field_tesla?: number;
+  max_current_amps?: number;
+  active_length_m?: number;
+  efficiency?: number;
+  max_speed_mps?: number;
+  target_launch_velocity_mps?: number;
+  // LSM - Legacy (backward compatibility)
   max_force_n?: number;
-  launch_velocity_mps?: number;
   // Lift
-  chain_speed_mps?: number;
+  lift_speed_mps?: number;
   engagement_point_s?: number;
   release_point_s?: number;
   // Brake
@@ -41,7 +48,14 @@ export function EquipmentEditor() {
     path_id: '',
     start_s: 0,
     end_s: 10,
-    max_force_n: 10000,
+    // LSM defaults
+    stator_count: 10,
+    stator_length_m: 1.5,
+    magnetic_field_tesla: 1.2,
+    max_current_amps: 500,
+    active_length_m: 0.3,
+    efficiency: 0.85,
+    max_speed_mps: 50,
   });
 
   if (!currentProject) {
@@ -68,7 +82,14 @@ export function EquipmentEditor() {
       path_id: '',
       start_s: 0,
       end_s: 10,
-      max_force_n: 10000,
+      // LSM defaults
+      stator_count: 10,
+      stator_length_m: 1.5,
+      magnetic_field_tesla: 1.2,
+      max_current_amps: 500,
+      active_length_m: 0.3,
+      efficiency: 0.85,
+      max_speed_mps: 50,
     });
     setEditingIndex(null);
     setShowForm(false);
@@ -88,12 +109,18 @@ export function EquipmentEditor() {
 
     // Add type-specific fields
     if (form.equipment_type === 'lsm_launch') {
-      newEquipment.stator_count = form.stator_count || 4;
-      newEquipment.max_force_n = form.max_force_n || 10000;
-      newEquipment.launch_velocity_mps = form.launch_velocity_mps || 15;
-      newEquipment.magnetic_field_strength = 0.5;
+      newEquipment.stator_count = form.stator_count || 10;
+      newEquipment.stator_length_m = form.stator_length_m || 1.5;
+      newEquipment.magnetic_field_tesla = form.magnetic_field_tesla || 1.2;
+      newEquipment.max_current_amps = form.max_current_amps || 500;
+      newEquipment.active_length_m = form.active_length_m || 0.3;
+      newEquipment.efficiency = form.efficiency || 0.85;
+      newEquipment.max_speed_mps = form.max_speed_mps || 50;
+      if (form.target_launch_velocity_mps) {
+        newEquipment.target_launch_velocity_mps = form.target_launch_velocity_mps;
+      }
     } else if (form.equipment_type === 'lift') {
-      newEquipment.chain_speed_mps = form.chain_speed_mps || 2;
+      newEquipment.lift_speed_mps = form.lift_speed_mps || 2;
       newEquipment.engagement_point_s = form.engagement_point_s || form.start_s;
       newEquipment.release_point_s = form.release_point_s || form.end_s;
       newEquipment.max_pull_force_n = 5000;
@@ -145,14 +172,23 @@ export function EquipmentEditor() {
       path_id: eq.path_id,
       start_s: eq.start_s,
       end_s: eq.end_s,
-      stator_count: eq.stator_count ?? 4,
-      max_force_n: eq.max_force_n ?? eq.max_brake_force_n ?? 10000,
-      launch_velocity_mps: eq.launch_velocity_mps ?? 15,
-      chain_speed_mps: eq.chain_speed_mps ?? 2,
+      // LSM electromagnetic params
+      stator_count: eq.stator_count ?? 10,
+      stator_length_m: eq.stator_length_m ?? 1.5,
+      magnetic_field_tesla: eq.magnetic_field_tesla ?? 1.2,
+      max_current_amps: eq.max_current_amps ?? 500,
+      active_length_m: eq.active_length_m ?? 0.3,
+      efficiency: eq.efficiency ?? 0.85,
+      max_speed_mps: eq.max_speed_mps ?? 50,
+      target_launch_velocity_mps: eq.target_launch_velocity_mps,
+      // Lift params
+      lift_speed_mps: eq.lift_speed_mps ?? eq.chain_speed_mps ?? 2,
       engagement_point_s: eq.engagement_point_s ?? eq.start_s,
       release_point_s: eq.release_point_s ?? eq.end_s,
+      // Brake params
       max_brake_force_n: eq.max_brake_force_n ?? 8000,
       fail_safe_mode: eq.fail_safe_mode ?? 'normally_closed',
+      // Switch params
       junction_id: eq.junction_id ?? '',
       outgoing_path_ids: eq.outgoing_path_ids ?? [],
       current_alignment: eq.current_alignment ?? '',
@@ -175,8 +211,12 @@ export function EquipmentEditor() {
 
   const getEquipmentLabel = (eq: any) => {
     switch (eq.equipment_type) {
-      case 'lsm_launch': return `LSM Launch (${eq.launch_velocity_mps || 0} m/s)`;
-      case 'lift': return `Lift Hill (${eq.chain_speed_mps || 0} m/s)`;
+      case 'lsm_launch': {
+        const stators = eq.stator_count || 0;
+        const bField = eq.magnetic_field_tesla || 0;
+        return `LSM Launch (${stators} stators, ${bField}T)`;
+      }
+      case 'lift': return `Lift Hill (${eq.lift_speed_mps ?? eq.chain_speed_mps ?? 0} m/s)`;
       case 'pneumatic_brake': return `Brake (${eq.max_brake_force_n || 0} N)`;
       case 'trim_brake': return `Trim Brake`;
       case 'booster': return `Booster`;
@@ -259,18 +299,83 @@ export function EquipmentEditor() {
                     {/* Type-specific fields */}
                     {form.equipment_type === 'lsm_launch' && (
                       <>
-                        <NumberInput
-                          size="xs"
-                          label="Launch Velocity (m/s)"
-                          value={form.launch_velocity_mps}
-                          onChange={(v) => setForm({ ...form, launch_velocity_mps: Number(v) || 0 })}
-                        />
-                        <NumberInput
-                          size="xs"
-                          label="Max Force (N)"
-                          value={form.max_force_n}
-                          onChange={(v) => setForm({ ...form, max_force_n: Number(v) || 0 })}
-                        />
+                        <Text size="xs" c="blue.4" mb="xs">
+                          LSM Force: F = B × I × L × efficiency × overlap × speed_factor
+                        </Text>
+                        <Group grow>
+                          <NumberInput
+                            size="xs"
+                            label="Stators"
+                            value={form.stator_count}
+                            onChange={(v) => setForm({ ...form, stator_count: Number(v) || 10 })}
+                            min={1}
+                            max={200}
+                          />
+                          <NumberInput
+                            size="xs"
+                            label="Stator Length (m)"
+                            value={form.stator_length_m}
+                            onChange={(v) => setForm({ ...form, stator_length_m: Number(v) || 1.5 })}
+                            min={0.1}
+                            step={0.1}
+                          />
+                        </Group>
+                        <Group grow>
+                          <NumberInput
+                            size="xs"
+                            label="Magnetic Field (T)"
+                            value={form.magnetic_field_tesla}
+                            onChange={(v) => setForm({ ...form, magnetic_field_tesla: Number(v) || 1.2 })}
+                            min={0.1}
+                            max={2.0}
+                            step={0.1}
+                          />
+                          <NumberInput
+                            size="xs"
+                            label="Max Current (A)"
+                            value={form.max_current_amps}
+                            onChange={(v) => setForm({ ...form, max_current_amps: Number(v) || 500 })}
+                            min={1}
+                          />
+                        </Group>
+                        <Group grow>
+                          <NumberInput
+                            size="xs"
+                            label="Active Length (m)"
+                            value={form.active_length_m}
+                            onChange={(v) => setForm({ ...form, active_length_m: Number(v) || 0.3 })}
+                            min={0.01}
+                            step={0.05}
+                          />
+                          <NumberInput
+                            size="xs"
+                            label="Efficiency"
+                            value={form.efficiency}
+                            onChange={(v) => setForm({ ...form, efficiency: Number(v) || 0.85 })}
+                            min={0.1}
+                            max={1.0}
+                            step={0.05}
+                          />
+                        </Group>
+                        <Group grow>
+                          <NumberInput
+                            size="xs"
+                            label="Max Speed (m/s)"
+                            value={form.max_speed_mps}
+                            onChange={(v) => setForm({ ...form, max_speed_mps: Number(v) || 50 })}
+                            min={1}
+                          />
+                          <NumberInput
+                            size="xs"
+                            label="Target Launch (m/s)"
+                            value={form.target_launch_velocity_mps}
+                            onChange={(v) => setForm({ ...form, target_launch_velocity_mps: Number(v) || undefined })}
+                            min={0}
+                          />
+                        </Group>
+                        <Text size="xs" c="dimmed">
+                          Est. max force: {((form.magnetic_field_tesla || 1.2) * (form.max_current_amps || 500) * (form.active_length_m || 0.3) * (form.efficiency || 0.85) * (form.stator_count || 10)).toFixed(0)} N
+                        </Text>
                       </>
                     )}
 
@@ -278,9 +383,9 @@ export function EquipmentEditor() {
                       <>
                         <NumberInput
                           size="xs"
-                          label="Chain Speed (m/s)"
-                          value={form.chain_speed_mps}
-                          onChange={(v) => setForm({ ...form, chain_speed_mps: Number(v) || 0 })}
+                          label="Lift Speed (m/s)"
+                          value={form.lift_speed_mps}
+                          onChange={(v) => setForm({ ...form, lift_speed_mps: Number(v) || 0 })}
                         />
                         <Group grow>
                           <NumberInput

@@ -16,7 +16,7 @@ const api = axios.create({
 });
 
 export function SwitchControlPanel() {
-  const { currentProject } = useProjectStore();
+  const { currentProject, setCurrentProject } = useProjectStore();
   const [updating, setUpdating] = useState<string | null>(null);
 
   if (!currentProject) {
@@ -51,7 +51,11 @@ export function SwitchControlPanel() {
         return eq;
       });
 
-      await updateProject(currentProject.id, { equipment: newEquipment });
+      // Update the project in backend and local store
+      const updatedProject = await updateProject(currentProject.id, { equipment: newEquipment });
+
+      // Update the Zustand store so UI reflects the change
+      setCurrentProject(updatedProject);
     } catch (e) {
       console.error('Failed to switch alignment:', e);
     } finally {

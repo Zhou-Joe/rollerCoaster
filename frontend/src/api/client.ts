@@ -62,6 +62,10 @@ export const resetSimulation = async (projectId: string): Promise<void> => {
   await api.post(`/physics/projects/${projectId}/simulate/reset`)
 }
 
+export const resetSimulator = async (projectId: string): Promise<void> => {
+  await api.post(`/physics/projects/${projectId}/reset-simulator`)
+}
+
 export const getSimulationState = async (projectId: string): Promise<SimulationState> => {
   const response = await api.get(`/physics/projects/${projectId}/simulate/state`)
   return response.data

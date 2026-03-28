@@ -17,7 +17,7 @@ from app.models.equipment import (
     TrackSwitch,
 )
 from app.models.common import BrakeState, BoosterMode, FailSafeMode
-from .lsm import compute_lsm_force, create_lsm_state, LSMState
+from .lsm import compute_lsm_force, create_lsm_state, LSMState, get_train_magnet_positions_from_project
 from .lift import compute_lift_effect, create_lift_state, LiftState
 from .pneumatic_brake import (
     compute_pneumatic_brake_force,
@@ -31,6 +31,25 @@ from .booster import compute_booster_force, set_booster_mode, create_booster_sta
 
 if TYPE_CHECKING:
     from app.models.project import Project
+
+
+@dataclass
+class EquipmentForceBreakdown:
+    """Detailed breakdown of equipment forces."""
+    lsm_force_n: float = 0.0
+    lift_force_n: float = 0.0
+    brake_force_n: float = 0.0
+    booster_force_n: float = 0.0
+    trim_force_n: float = 0.0
+    lsm_stators_active: int = 0
+    lsm_overlap_ratio: float = 0.0
+
+
+# Helper function for backward compatibility
+def _get_default_train_params() -> Tuple[float, List[Tuple[float, float]]]:
+    """Get default train parameters for backward compatibility."""
+    # Default: 10m train with full-length magnets
+    return 10.0, [(0.0, 2.0), (2.5, 4.5), (5.0, 7.0), (7.5, 9.5)]  # 5 vehicles, 2m each with 0.5m gap
 
 
 def _parse_equipment(equipment_dict: dict) -> Equipment:
@@ -106,8 +125,9 @@ class EquipmentManager:
         train_s: float,
         train_velocity_mps: float,
         train_mass_kg: float,
+        train_id: Optional[str] = None,
         dt: float = 0.01
-    ) -> Tuple[float, Optional[float]]:
+    ) -> Tuple[float, Optional[float], EquipmentForceBreakdown]:
         """
         Compute total equipment force on a train and any velocity override.
 
@@ -120,15 +140,30 @@ class EquipmentManager:
             train_s: Train front position (arc length)
             train_velocity_mps: Train velocity
             train_mass_kg: Total train mass
+            train_id: Train ID (required for LSM force calculation with magnet overlap)
             dt: Time step
 
         Returns:
-            Tuple of (total_force_n, lift_velocity_override_mps)
+            Tuple of (total_force_n, lift_velocity_override_mps, force_breakdown)
             - lift_velocity_override_mps is None if no lift is engaged,
               otherwise it's the lift speed that the train should follow
+            - force_breakdown contains detailed equipment force breakdown
         """
         total_force = 0.0
         lift_velocity_override = None
+        breakdown = EquipmentForceBreakdown()
+
+        # Get train magnet positions if train_id is provided
+        train_length_m = 0.0
+        magnet_positions: List[Tuple[float, float]] = []
+        if train_id:
+            train_length_m, magnet_positions = get_train_magnet_positions_from_project(
+                self.project, train_id, train_s
+            )
+
+        # Use defaults if no train info available
+        if not magnet_positions:
+            train_length_m, magnet_positions = _get_default_train_params()
 
         for equipment_dict in self.project.equipment:
             equipment = _parse_equipment(equipment_dict)
@@ -139,9 +174,13 @@ class EquipmentManager:
                     if state:
                         force = compute_lsm_force(
                             equipment, state,
-                            train_s, train_velocity_mps, train_mass_kg, dt
+                            train_s, train_velocity_mps, train_mass_kg,
+                            train_length_m, magnet_positions, dt
                         )
                         total_force += force
+                        breakdown.lsm_force_n = force
+                        breakdown.lsm_stators_active = state.stators_active
+                        breakdown.lsm_overlap_ratio = state.total_overlap_ratio
 
             elif isinstance(equipment, Lift):
                 if equipment.path_id == train_path_id:
@@ -152,6 +191,7 @@ class EquipmentManager:
                             train_s, train_velocity_mps, dt
                         )
                         total_force += force
+                        breakdown.lift_force_n = force
                         # If lift is engaged, it overrides velocity
                         if state.engaged and lift_velocity is not None:
                             lift_velocity_override = lift_velocity
@@ -165,6 +205,7 @@ class EquipmentManager:
                             train_s, train_velocity_mps, dt
                         )
                         total_force += force  # Already negative for braking
+                        breakdown.brake_force_n = force
 
             elif isinstance(equipment, TrimBrake):
                 if equipment.path_id == train_path_id:
@@ -175,6 +216,7 @@ class EquipmentManager:
                             train_s, train_velocity_mps, dt
                         )
                         total_force += force  # Already negative for braking
+                        breakdown.trim_force_n = force
 
             elif isinstance(equipment, Booster):
                 if equipment.path_id == train_path_id:
@@ -185,8 +227,9 @@ class EquipmentManager:
                             train_s, train_velocity_mps, dt
                         )
                         total_force += force
+                        breakdown.booster_force_n = force
 
-        return total_force, lift_velocity_override
+        return total_force, lift_velocity_override, breakdown
 
     def set_lsm_enabled(self, lsm_id: str, enabled: bool) -> bool:
         """Enable or disable an LSM."""

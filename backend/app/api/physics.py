@@ -20,6 +20,7 @@ class TrainStateResponse(BaseModel):
     acceleration_mps2: float
     mass_kg: float
     forces: dict
+    equipment_forces: dict = {}
     gforces: dict
     energy: dict
 
@@ -75,6 +76,16 @@ def _get_or_create_simulator(project_id: str):
     return _simulators[project_id]
 
 
+@router.post("/projects/{project_id}/reset-simulator")
+async def reset_simulator(project_id: str):
+    """Reset simulator when project data changes (called after project update)."""
+    if project_id in _simulators:
+        # Remove old simulator - it will be recreated with new data
+        del _simulators[project_id]
+        print(f"[DEBUG] Reset simulator for project {project_id}")
+    return {"status": "ok"}
+
+
 @router.post("/projects/{project_id}/simulate/start")
 async def start_simulation(project_id: str):
     """Start physics simulation."""
@@ -119,10 +130,21 @@ async def get_simulation_state(project_id: str):
             acceleration_mps2=t.acceleration_mps2,
             mass_kg=t.mass_kg,
             forces={
+                "gravity_tangent_n": t.forces.gravity_tangent_n,
                 "gravity_n": t.forces.gravity_tangent_n,
                 "drag_n": t.forces.drag_n,
                 "rolling_resistance_n": t.forces.rolling_resistance_n,
+                "equipment_n": t.forces.equipment_n,
                 "total_n": t.forces.total_n
+            },
+            equipment_forces={
+                "lsm_force_n": t.equipment_forces.lsm_force_n,
+                "lift_force_n": t.equipment_forces.lift_force_n,
+                "brake_force_n": t.equipment_forces.brake_force_n,
+                "booster_force_n": t.equipment_forces.booster_force_n,
+                "trim_force_n": t.equipment_forces.trim_force_n,
+                "lsm_stators_active": t.equipment_forces.lsm_stators_active,
+                "lsm_overlap_ratio": t.equipment_forces.lsm_overlap_ratio
             },
             gforces={
                 "normal_g": t.gforces.normal_g,
@@ -169,10 +191,21 @@ async def step_simulation(project_id: str, request: StepRequest = None):
             acceleration_mps2=t.acceleration_mps2,
             mass_kg=t.mass_kg,
             forces={
+                "gravity_tangent_n": t.forces.gravity_tangent_n,
                 "gravity_n": t.forces.gravity_tangent_n,
                 "drag_n": t.forces.drag_n,
                 "rolling_resistance_n": t.forces.rolling_resistance_n,
+                "equipment_n": t.forces.equipment_n,
                 "total_n": t.forces.total_n
+            },
+            equipment_forces={
+                "lsm_force_n": t.equipment_forces.lsm_force_n,
+                "lift_force_n": t.equipment_forces.lift_force_n,
+                "brake_force_n": t.equipment_forces.brake_force_n,
+                "booster_force_n": t.equipment_forces.booster_force_n,
+                "trim_force_n": t.equipment_forces.trim_force_n,
+                "lsm_stators_active": t.equipment_forces.lsm_stators_active,
+                "lsm_overlap_ratio": t.equipment_forces.lsm_overlap_ratio
             },
             gforces={
                 "normal_g": t.gforces.normal_g,

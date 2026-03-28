@@ -1,41 +1,9 @@
 import { Box, Paper, Text, Group, Progress, Stack, Badge } from '@mantine/core';
 import { useProjectStore } from '../../state/projectStore';
-import type { InterpolatedPath } from '../../types';
+import { computeTrainKinematics } from '../../utils/trainKinematics';
 
 interface TelemetryPanelProps {
   trainId?: string;
-}
-
-/**
- * Find a sample point on the path at a given arc length position
- */
-function findPointAtS(path: InterpolatedPath, s: number) {
-  for (let i = 0; i < path.points.length - 1; i++) {
-    const p1 = path.points[i];
-    const p2 = path.points[i + 1];
-    if (p1.s <= s && p2.s >= s) {
-      const t = (s - p1.s) / (p2.s - p1.s);
-      return {
-        tangent: [
-          p1.tangent[0] + t * (p2.tangent[0] - p1.tangent[0]),
-          p1.tangent[1] + t * (p2.tangent[1] - p1.tangent[1]),
-          p1.tangent[2] + t * (p2.tangent[2] - p1.tangent[2]),
-        ] as [number, number, number],
-        normal: [
-          p1.normal[0] + t * (p2.normal[0] - p1.normal[0]),
-          p1.normal[1] + t * (p2.normal[1] - p1.normal[1]),
-          p1.normal[2] + t * (p2.normal[2] - p1.normal[2]),
-        ] as [number, number, number],
-        binormal: [
-          p1.binormal[0] + t * (p2.binormal[0] - p1.binormal[0]),
-          p1.binormal[1] + t * (p2.binormal[1] - p1.binormal[1]),
-          p1.binormal[2] + t * (p2.binormal[2] - p1.binormal[2]),
-        ] as [number, number, number],
-        curvature: p1.curvature + t * (p2.curvature - p1.curvature),
-      };
-    }
-  }
-  return path.points.find((p) => Math.abs(p.s - s) < 0.5);
 }
 
 export function TelemetryPanel({ trainId }: TelemetryPanelProps) {
@@ -44,44 +12,15 @@ export function TelemetryPanel({ trainId }: TelemetryPanelProps) {
   const targetTrainId = trainId || selectedTrainId;
   const train = simulationState?.trains.find((t) => t.train_id === targetTrainId);
 
-  // Get the interpolated path for this train to compute world velocities
   const path = train ? interpolatedPaths.get(train.path_id) : null;
-  const geometryPoint = train && path ? findPointAtS(path, train.s_front_m) : null;
-
-  // Compute world coordinate velocity components
-  const worldVelocity = geometryPoint ? {
-    x: train!.velocity_mps * geometryPoint.tangent[0],
-    y: train!.velocity_mps * geometryPoint.tangent[1],
-    z: train!.velocity_mps * geometryPoint.tangent[2],
-  } : { x: 0, y: 0, z: 0 };
-
-  // Compute world coordinate acceleration components (tangent + centripetal)
-  // Tangent acceleration is along track direction
-  // Centripetal acceleration = v² * curvature, directed toward center (negative normal direction)
-  const tangentAccel = geometryPoint ? {
-    x: train!.acceleration_mps2 * geometryPoint.tangent[0],
-    y: train!.acceleration_mps2 * geometryPoint.tangent[1],
-    z: train!.acceleration_mps2 * geometryPoint.tangent[2],
-  } : { x: 0, y: 0, z: 0 };
-
-  // Centripetal acceleration: a_c = v² / R = v² * curvature, direction = -normal
-  const centripetalMag = geometryPoint ? train!.velocity_mps * train!.velocity_mps * geometryPoint.curvature : 0;
-  const centripetalAccel = geometryPoint ? {
-    x: -centripetalMag * geometryPoint.normal[0],
-    y: -centripetalMag * geometryPoint.normal[1],
-    z: -centripetalMag * geometryPoint.normal[2],
-  } : { x: 0, y: 0, z: 0 };
-
-  // Total world acceleration
-  const worldAccel = {
-    x: tangentAccel.x + centripetalAccel.x,
-    y: tangentAccel.y + centripetalAccel.y,
-    z: tangentAccel.z + centripetalAccel.z,
-  };
-
-  // Combined magnitude (should match the scalar values for velocity, different for accel)
-  const totalWorldVelocity = Math.sqrt(worldVelocity.x**2 + worldVelocity.y**2 + worldVelocity.z**2);
-  const totalWorldAccel = Math.sqrt(worldAccel.x**2 + worldAccel.y**2 + worldAccel.z**2);
+  const {
+    worldVelocity,
+    totalWorldVelocity,
+    totalWorldAcceleration: totalWorldAccel,
+    localAcceleration,
+  } = train
+    ? computeTrainKinematics(path, train.s_front_m, train.velocity_mps, train.acceleration_mps2)
+    : computeTrainKinematics(null, 0, 0, 0);
 
   if (!train) {
     return (
@@ -177,25 +116,25 @@ export function TelemetryPanel({ trainId }: TelemetryPanelProps) {
         {/* Divider */}
         <Box my="xs" style={{ borderTop: '1px solid #404040' }} />
 
-        {/* World Acceleration Components */}
+        {/* Train Acceleration Components */}
         <Text size="sm" fw={600} c="gray.3" mt="xs">
-          World Acceleration (Three.js coords)
+          Train Acceleration
         </Text>
 
         <MetricRow
-          label="  Ax (Right)"
-          value={`${worldAccel.x.toFixed(2)} m/s²`}
-          color={Math.abs(worldAccel.x) > 5 ? 'orange' : undefined}
+          label="  Fore/Aft"
+          value={`${localAcceleration.foreAft.toFixed(2)} m/s²`}
+          color={Math.abs(localAcceleration.foreAft) > 5 ? 'orange' : undefined}
         />
         <MetricRow
-          label="  Ay (Up)"
-          value={`${worldAccel.y.toFixed(2)} m/s²`}
-          color={worldAccel.y < -5 ? 'red' : worldAccel.y > 5 ? 'orange' : undefined}
+          label="  Right/Left"
+          value={`${localAcceleration.rightLeft.toFixed(2)} m/s²`}
+          color={Math.abs(localAcceleration.rightLeft) > 5 ? 'orange' : undefined}
         />
         <MetricRow
-          label="  Az (Forward)"
-          value={`${worldAccel.z.toFixed(2)} m/s²`}
-          color={Math.abs(worldAccel.z) > 5 ? 'orange' : undefined}
+          label="  Eye Up/Down"
+          value={`${localAcceleration.eyeUpDown.toFixed(2)} m/s²`}
+          color={Math.abs(localAcceleration.eyeUpDown) > 5 ? 'orange' : undefined}
         />
         <MetricRow
           label="  |A| (Total)"
@@ -243,6 +182,61 @@ export function TelemetryPanel({ trainId }: TelemetryPanelProps) {
           value={`${train.forces.total_n.toFixed(0)} N`}
           bold
         />
+
+        {/* Equipment Force Breakdown */}
+        {train.equipment_forces && (train.equipment_forces.lsm_force_n !== 0 ||
+          train.equipment_forces.lift_force_n !== 0 ||
+          train.equipment_forces.brake_force_n !== 0) && (
+          <>
+            <Box my="xs" style={{ borderTop: '1px solid #404040' }} />
+            <Text size="sm" fw={600} c="blue.4" mt="xs">
+              Equipment Details
+            </Text>
+
+            {train.equipment_forces.lsm_force_n !== 0 && (
+              <>
+                <MetricRow
+                  label="LSM Force"
+                  value={`${train.equipment_forces.lsm_force_n.toFixed(0)} N`}
+                  color="#69db7c"
+                  bold
+                />
+                <MetricRow
+                  label="  Stators Active"
+                  value={`${train.equipment_forces.lsm_stators_active}`}
+                />
+                <MetricRow
+                  label="  Overlap"
+                  value={`${(train.equipment_forces.lsm_overlap_ratio * 100).toFixed(1)}%`}
+                />
+              </>
+            )}
+
+            {train.equipment_forces.lift_force_n !== 0 && (
+              <MetricRow
+                label="Lift Force"
+                value={`${train.equipment_forces.lift_force_n.toFixed(0)} N`}
+                color="#74c0fc"
+              />
+            )}
+
+            {train.equipment_forces.brake_force_n !== 0 && (
+              <MetricRow
+                label="Brake Force"
+                value={`${train.equipment_forces.brake_force_n.toFixed(0)} N`}
+                color="#ff8787"
+              />
+            )}
+
+            {train.equipment_forces.booster_force_n !== 0 && (
+              <MetricRow
+                label="Booster Force"
+                value={`${train.equipment_forces.booster_force_n.toFixed(0)} N`}
+                color="#ffd43b"
+              />
+            )}
+          </>
+        )}
       </Stack>
     </Box>
   );

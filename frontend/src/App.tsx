@@ -1,8 +1,8 @@
 import { BrowserRouter, Routes, Route, Link } from 'react-router-dom';
 import { AppShell, Text, Group, Box, Anchor, Button, Badge, Tabs, ScrollArea, Modal, Stack, ActionIcon } from '@mantine/core';
 import { useQuery } from '@tanstack/react-query';
-import { useState, useEffect } from 'react';
-import { healthCheck, listProjects, getProject, getInterpolatedPath, startSimulation, stopSimulation, resetSimulation, stepSimulation, getSimulationState, createProject, updateProject, deleteProject } from './api/client';
+import { useState, useEffect, useRef } from 'react';
+import { healthCheck, listProjects, getProject, getInterpolatedPath, startSimulation, stopSimulation, resetSimulation, stepSimulation, getSimulationState, createProject, updateProject, deleteProject, resetSimulator } from './api/client';
 import { useProjectStore } from './state/projectStore';
 import { Editor3D } from './components/Editor3D';
 import { SimulationPlayer } from './components/SimulationPlayer';
@@ -39,9 +39,15 @@ function App() {
     setEditingMode,
   } = useProjectStore();
 
-  const [simulationInterval, setSimulationInterval] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<string>('track');
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+
+  // Ref to track if simulation loop should continue - prevents stale updates after stop
+  const simulationRunningRef = useRef(false);
+  // Ref to track animation frame for cancellation
+  const animationFrameRef = useRef<number | null>(null);
+  // Ref to track if a step is currently in progress
+  const stepInProgressRef = useRef(false);
 
   // Load first project on mount
   useEffect(() => {
@@ -84,64 +90,89 @@ function App() {
       setSimulationState({ ...simulationState, running: true });
     }
 
-    // Smart speed control: backend does precise steps, frontend skips frames for display
-    // This allows arbitrary speed multipliers without overwhelming the browser
-    // Target: smooth UI at ~20-50fps regardless of simulation speed
-    let updateInterval = 50; // ms between UI updates (20fps base)
-    let stepsPerUpdate = 1;
+    // Mark simulation as running
+    simulationRunningRef.current = true;
+    stepInProgressRef.current = false;
 
-    if (playbackSpeed <= 1) {
-      // Slow motion: 50ms interval, 1 step per update
-      updateInterval = 50;
-      stepsPerUpdate = 1;
-    } else if (playbackSpeed <= 10) {
-      // Normal to fast: keep smooth animation, increase steps
-      updateInterval = 20; // 50fps for smooth animation
-      stepsPerUpdate = Math.round(playbackSpeed / 2); // 1-5 steps
-    } else if (playbackSpeed <= 50) {
-      // Very fast: more steps, slightly slower UI updates
-      updateInterval = 30; // ~33fps
-      stepsPerUpdate = Math.round(playbackSpeed); // 20-50 steps per update
-    } else {
-      // Ultra fast (100x+): backend runs many steps, UI updates at ~20fps
-      updateInterval = 50; // 20fps - smooth enough for display
-      stepsPerUpdate = Math.round(playbackSpeed * 2); // 200+ steps per update
-    }
+    // Calculate steps per frame based on speed
+    // At high speeds, we do more backend steps per animation frame
+    const getStepsPerFrame = () => {
+      if (playbackSpeed <= 1) return 1;
+      if (playbackSpeed <= 10) return Math.round(playbackSpeed / 2);
+      if (playbackSpeed <= 50) return Math.round(playbackSpeed);
+      return Math.round(playbackSpeed * 2);
+    };
 
-    const interval = window.setInterval(async () => {
-      if (currentProject?.id) {
+    const stepsPerFrame = getStepsPerFrame();
+
+    // Target frame time based on speed (for smooth animation)
+    const getTargetFrameTime = () => {
+      if (playbackSpeed <= 1) return 50; // 20fps for slow-mo
+      if (playbackSpeed <= 10) return 33; // 30fps for normal
+      return 50; // 20fps for fast speeds (less janky)
+    };
+
+    const targetFrameTime = getTargetFrameTime();
+    let lastFrameTime = performance.now();
+
+    const runSimulationLoop = async () => {
+      if (!simulationRunningRef.current) return;
+
+      const now = performance.now();
+      const elapsed = now - lastFrameTime;
+
+      // Only step if enough time has passed and no step is currently in progress
+      if (elapsed >= targetFrameTime && !stepInProgressRef.current) {
+        lastFrameTime = now;
+        stepInProgressRef.current = true;
+
         try {
-          // Run multiple simulation steps for high speeds
-          const state = await stepSimulation(currentProject.id, stepsPerUpdate);
-          setSimulationState(state);
+          if (currentProject?.id && simulationRunningRef.current) {
+            const state = await stepSimulation(currentProject.id, stepsPerFrame);
+            if (simulationRunningRef.current) {
+              setSimulationState(state);
+            }
+          }
         } catch (e) {
-          console.error('Failed to poll simulation:', e);
+          console.error('Failed to step simulation:', e);
+        } finally {
+          stepInProgressRef.current = false;
         }
       }
-    }, updateInterval);
-    setSimulationInterval(interval);
+
+      // Schedule next frame
+      if (simulationRunningRef.current) {
+        animationFrameRef.current = requestAnimationFrame(runSimulationLoop);
+      }
+    };
+
+    // Start the loop
+    animationFrameRef.current = requestAnimationFrame(runSimulationLoop);
   };
 
   const handlePause = async () => {
+    // Stop accepting simulation updates immediately
+    simulationRunningRef.current = false;
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
+    }
     if (!currentProject?.id) return;
     await stopSimulation(currentProject.id);
     if (simulationState) {
       setSimulationState({ ...simulationState, running: false });
     }
-
-    if (simulationInterval) {
-      clearInterval(simulationInterval);
-      setSimulationInterval(null);
-    }
   };
 
   const handleStop = async () => {
+    // Stop accepting simulation updates immediately
+    simulationRunningRef.current = false;
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
+    }
     if (!currentProject?.id) return;
     await stopSimulation(currentProject.id);
-    if (simulationInterval) {
-      clearInterval(simulationInterval);
-      setSimulationInterval(null);
-    }
     // Update simulation state to show stopped
     if (simulationState) {
       setSimulationState({ ...simulationState, running: false });
@@ -149,12 +180,14 @@ function App() {
   };
 
   const handleReset = async () => {
+    // Stop accepting simulation updates immediately
+    simulationRunningRef.current = false;
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
+    }
     if (!currentProject?.id) return;
     await resetSimulation(currentProject.id);
-    if (simulationInterval) {
-      clearInterval(simulationInterval);
-      setSimulationInterval(null);
-    }
     try {
       const state = await getSimulationState(currentProject.id);
       setSimulationState(state);
@@ -214,26 +247,26 @@ function App() {
         { id: 'v5', length_m: 2.0, dry_mass_kg: 500.0, capacity: 4, passenger_mass_per_person_kg: 75 }
       ],
       trains: [
-        { id: 'train_1', vehicle_ids: ['v1', 'v2', 'v3', 'v4', 'v5'], current_path_id: 'main_track', front_position_s: 5.0 }
+        { id: 'train_1', vehicle_ids: ['v1', 'v2', 'v3', 'v4', 'v5'], current_path_id: 'main_segment_1', front_position_s: 5.0 }
       ],
       equipment: [
         {
           equipment_type: 'lift',
           id: 'lift_1',
-          path_id: 'main_track',
+          path_id: 'main_segment_1',
           start_s: 0,
-          end_s: 45,
-          chain_speed_mps: 2,
+          end_s: 130,
+          lift_speed_mps: 2,
           engagement_point_s: 5,
-          release_point_s: 40,
+          release_point_s: 120,
           enabled: true
         },
         {
           equipment_type: 'pneumatic_brake',
           id: 'brake_1',
-          path_id: 'main_track',
-          start_s: 100,
-          end_s: 110,
+          path_id: 'main_segment_2',
+          start_s: 10,
+          end_s: 20,
           max_brake_force_n: 8000,
           fail_safe_mode: 'normally_closed',
           response_time_s: 0.2,
@@ -263,6 +296,9 @@ function App() {
         air_density_kg_m3: 1.225
       }
     });
+
+    // Reset simulator to ensure it uses the new project data
+    await resetSimulator(projectId);
 
     await refetchProjects();
     await loadProject(projectId);

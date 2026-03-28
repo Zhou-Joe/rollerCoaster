@@ -10,6 +10,9 @@ class Vehicle(BaseModel):
     capacity: int
     passenger_mass_per_person_kg: float = 75.0
     vehicle_type: Optional[str] = None
+    # LSM interaction parameters
+    magnet_length_m: Optional[float] = None  # Length of LSM magnet fin (defaults to vehicle length if not set)
+    magnet_offset_m: float = 0.0  # Offset from front of vehicle to start of magnet
 
 
 class Train(BaseModel):

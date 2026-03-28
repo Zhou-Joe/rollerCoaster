@@ -11,6 +11,7 @@ from app.simulation.physics import (
     compute_train_mass,
     compute_train_length,
 )
+from app.simulation.physics.types import ForceComponents
 
 
 @pytest.fixture
@@ -175,6 +176,29 @@ def test_simulator_train_stops_at_path_end(simple_project):
 
     # Train should be at or before path end
     assert state.s_front_m <= path_length
+    assert state.velocity_mps == pytest.approx(0.0)
+
+
+def test_simulator_distance_matches_constant_acceleration_kinematics(simple_project, monkeypatch):
+    """Distance should advance with v*dt + 0.5*a*dt^2 for a constant step acceleration."""
+    cache = GeometryCache(simple_project)
+    cache.compute_all()
+
+    simulator = PhysicsSimulator(simple_project, cache)
+
+    monkeypatch.setattr(
+        "app.simulation.physics.integrator.compute_forces",
+        lambda **kwargs: ForceComponents(total_n=3000.0),
+    )
+
+    simulator.set_train_velocity("train1", 0.0)
+
+    simulator.step(1.0)
+    state = simulator.get_train_state("train1")
+
+    assert state.acceleration_mps2 == pytest.approx(2.0)
+    assert state.velocity_mps == pytest.approx(2.0)
+    assert state.s_front_m == pytest.approx(6.0)
 
 
 def test_simulator_reset(simple_project):
