@@ -210,33 +210,54 @@ function App() {
 
     await updateProject(projectId, {
       points: [
-        { id: 'p1', x: 0, y: 0, z: 20, bank_deg: 0 },
-        { id: 'p2', x: 20, y: 0, z: 25, bank_deg: 0 },
-        { id: 'p3', x: 40, y: 0, z: 30, bank_deg: 0 },
-        { id: 'p4', x: 60, y: 0, z: 25, bank_deg: 0 },
-        { id: 'p5', x: 80, y: 0, z: 20, bank_deg: 0 },
-        { id: 'p6', x: 100, y: 0, z: 15, bank_deg: 0 },
-        { id: 'p7', x: 100, y: 20, z: 10, bank_deg: 20 },
-        { id: 'p8', x: 80, y: 30, z: 5, bank_deg: 30 },
-        { id: 'p9', x: 60, y: 30, z: 3, bank_deg: 0 },
-        { id: 'p10', x: 40, y: 20, z: 5, bank_deg: -20 },
-        { id: 'p11', x: 20, y: 10, z: 10, bank_deg: 0 },
-        { id: 'p12', x: 0, y: 0, z: 20, bank_deg: 0 },
-        // Branch track points
-        { id: 'p13', x: 60, y: 50, z: 3, bank_deg: 0 },
-        { id: 'p14', x: 40, y: 60, z: 8, bank_deg: 15 },
-        { id: 'p15', x: 20, y: 50, z: 15, bank_deg: 0 },
+        // Main track segment 1: station to junction (p10)
+        // z = height above ground
+        { id: 'p1', x: 0, y: 0, z: 5, bank_deg: 0 },
+        { id: 'p2', x: 20, y: 0, z: 8, bank_deg: 0 },
+        { id: 'p3', x: 40, y: 0, z: 12, bank_deg: 0 },
+        { id: 'p4', x: 60, y: 0, z: 15, bank_deg: 0 },
+        { id: 'p5', x: 80, y: 0, z: 18, bank_deg: 0 },
+        { id: 'p6', x: 100, y: 0, z: 20, bank_deg: 0 },
+        { id: 'p7', x: 100, y: 20, z: 25, bank_deg: 20 },
+        { id: 'p8', x: 80, y: 35, z: 30, bank_deg: 30 },
+        { id: 'p9', x: 60, y: 40, z: 28, bank_deg: 0 },
+        { id: 'p10', x: 40, y: 35, z: 22, bank_deg: -20 },
+        // Main track segment 2: junction back to station
+        { id: 'p11', x: 20, y: 25, z: 15, bank_deg: 0 },
+        { id: 'p12', x: 0, y: 15, z: 8, bank_deg: 0 },
+        // Branch track 1: diverges from p10
+        { id: 'bp1', x: 55, y: 45, z: 18, bank_deg: 0 },
+        { id: 'bp2', x: 75, y: 55, z: 12, bank_deg: 10 },
+        { id: 'bp3', x: 95, y: 60, z: 8, bank_deg: 15 },
+        { id: 'bp4', x: 115, y: 58, z: 10, bank_deg: 0 },
+        // Branch track 1 continuation
+        { id: 'bp5', x: 135, y: 55, z: 6, bank_deg: 0 },
+        { id: 'bp6', x: 155, y: 50, z: 5, bank_deg: 0 },
+        // Branch track 2: diverges from bp4
+        { id: 'cp1', x: 120, y: 75, z: 15, bank_deg: 20 },
+        { id: 'cp2', x: 140, y: 85, z: 20, bank_deg: 25 },
+        { id: 'cp3', x: 160, y: 80, z: 12, bank_deg: -15 },
+        { id: 'cp4', x: 170, y: 65, z: 8, bank_deg: 0 },
       ],
       paths: [
-        { id: 'main_track', name: 'Main Track', point_ids: ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'p8', 'p9', 'p10', 'p11', 'p12'] },
-        { id: 'branch_track', name: 'Branch Track', point_ids: ['p9', 'p13', 'p14', 'p15'] }
+        { id: 'main_segment_1', name: 'Main Track Part 1', point_ids: ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'p8', 'p9', 'p10'] },
+        { id: 'main_segment_2', name: 'Main Track Part 2', point_ids: ['p10', 'p11', 'p12'] },
+        { id: 'branch_track_1', name: 'Branch Track 1', point_ids: ['p10', 'bp1', 'bp2', 'bp3', 'bp4'] },
+        { id: 'branch_track_1_cont', name: 'Branch Track 1 Continuation', point_ids: ['bp4', 'bp5', 'bp6'] },
+        { id: 'branch_track_2', name: 'Branch Track 2', point_ids: ['bp4', 'cp1', 'cp2', 'cp3', 'cp4'] }
       ],
       junctions: [
         {
           id: 'junction_1',
-          incoming_path_id: 'main_track',
-          outgoing_path_ids: ['main_track', 'branch_track'],
-          position_s: 180
+          incoming_path_id: 'main_segment_1',
+          outgoing_path_ids: ['main_segment_2', 'branch_track_1'],
+          position_s: 0  // At the end of the incoming path
+        },
+        {
+          id: 'junction_2',
+          incoming_path_id: 'branch_track_1',
+          outgoing_path_ids: ['branch_track_1_cont', 'branch_track_2'],
+          position_s: 0  // At the end of branch_track_1
         }
       ],
       vehicles: [
@@ -277,13 +298,26 @@ function App() {
         {
           equipment_type: 'track_switch',
           id: 'switch_1',
-          path_id: 'main_track',
-          start_s: 175,
-          end_s: 185,
+          path_id: 'main_segment_1',
+          start_s: 0,
+          end_s: 1,
           junction_id: 'junction_1',
-          incoming_path_id: 'main_track',
-          outgoing_path_ids: ['main_track', 'branch_track'],
-          current_alignment: 'main_track',
+          incoming_path_id: 'main_segment_1',
+          outgoing_path_ids: ['main_segment_2', 'branch_track_1'],
+          current_alignment: 'main_segment_2',
+          actuation_time_s: 2.0,
+          locked_when_occupied: true
+        },
+        {
+          equipment_type: 'track_switch',
+          id: 'switch_2',
+          path_id: 'branch_track_1',
+          start_s: 0,
+          end_s: 1,
+          junction_id: 'junction_2',
+          incoming_path_id: 'branch_track_1',
+          outgoing_path_ids: ['branch_track_1_cont', 'branch_track_2'],
+          current_alignment: 'branch_track_1_cont',
           actuation_time_s: 2.0,
           locked_when_occupied: true
         }
@@ -292,7 +326,7 @@ function App() {
         time_step_s: 0.01,
         gravity_mps2: 9.81,
         drag_coefficient: 0.5,
-        rolling_resistance_coefficient: 0.05,
+        rolling_resistance_coefficient: 0.025,
         air_density_kg_m3: 1.225
       }
     });
