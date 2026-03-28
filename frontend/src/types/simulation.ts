@@ -54,6 +54,8 @@ export interface TrainPhysicsState {
     trim_force_n: number;
     lsm_stators_active: number;
     lsm_overlap_ratio: number;
+    brake_overlap_ratio: number;
+    trim_overlap_ratio: number;
   };
   gforces: {
     normal_g: number;

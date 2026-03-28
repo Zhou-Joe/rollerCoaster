@@ -89,3 +89,75 @@ async def save_project(project_id: str, filename: str = None):
     fname = filename or f"{project.metadata.name.replace(' ', '_')}.json"
     filepath = _project_io.save(project, fname)
     return {"status": "saved", "filepath": filepath}
+
+
+@router.get("/{project_id}/export")
+async def export_project(project_id: str):
+    """Export project data as JSON for download."""
+    if project_id not in _projects:
+        raise HTTPException(status_code=404, detail="Project not found")
+    project = _projects[project_id]
+    return project.model_dump()
+
+
+@router.post("/{project_id}/import")
+async def import_project(project_id: str, data: dict):
+    """Import project data from JSON."""
+    if project_id not in _projects:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    try:
+        # Validate the imported data
+        imported_project = Project.model_validate(data)
+
+        # Preserve the original project ID but update everything else
+        current_project = _projects[project_id]
+
+        # Update metadata (keep creation time from original)
+        current_project.metadata = imported_project.metadata
+        current_project.metadata.modified_at = datetime.now(timezone.utc)
+
+        # Update all data
+        current_project.points = imported_project.points
+        current_project.paths = imported_project.paths
+        current_project.junctions = imported_project.junctions
+        current_project.switches = imported_project.switches
+        current_project.sections = imported_project.sections
+        current_project.stations = imported_project.stations
+        current_project.blocks = imported_project.blocks
+        current_project.vehicles = imported_project.vehicles
+        current_project.trains = imported_project.trains
+        current_project.equipment = imported_project.equipment
+        current_project.control_rules = imported_project.control_rules
+        current_project.control_scripts = imported_project.control_scripts
+        current_project.simulation_settings = imported_project.simulation_settings
+
+        _projects[project_id] = current_project
+
+        return {"status": "imported", "id": project_id}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid project data: {str(e)}")
+
+
+@router.post("/import/new")
+async def import_new_project(data: dict, filename: str = None):
+    """Import project data as a new project."""
+    try:
+        # Validate the imported data
+        imported_project = Project.model_validate(data)
+
+        # Create new project ID
+        new_project_id = str(uuid.uuid4())
+
+        # Update timestamps
+        imported_project.metadata.created_at = datetime.now(timezone.utc)
+        imported_project.metadata.modified_at = datetime.now(timezone.utc)
+
+        if filename:
+            imported_project.metadata.name = filename.replace('.json', '').replace('_', ' ')
+
+        _projects[new_project_id] = imported_project
+
+        return {"status": "imported", "id": new_project_id, **imported_project.model_dump()}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid project data: {str(e)}")

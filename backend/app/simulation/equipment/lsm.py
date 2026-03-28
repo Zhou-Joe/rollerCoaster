@@ -109,8 +109,9 @@ def compute_lsm_force(
         for magnet_start_rel, magnet_end_rel in vehicle_magnet_positions:
             # Convert magnet positions to absolute path positions
             # magnet positions are relative to train front (positive = behind front)
-            magnet_start_s = train_s - magnet_start_rel
-            magnet_end_s = train_s - magnet_end_rel
+            # Since mag_end_rel > mag_start_rel, magnet_end_s < magnet_start_s on path
+            magnet_end_s = train_s - magnet_start_rel  # Closer to front (higher s)
+            magnet_start_s = train_s - magnet_end_rel  # Further back (lower s)
 
             # Calculate overlap
             overlap_start = max(stator_start, magnet_start_s)

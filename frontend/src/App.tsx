@@ -14,6 +14,7 @@ import { VehicleEditor } from './components/VehicleEditor/VehicleEditor';
 import { JunctionEditor } from './components/JunctionEditor/JunctionEditor';
 import { ProjectManager } from './components/ProjectManager/ProjectManager';
 import { SwitchControlPanel } from './components/SwitchControlPanel/SwitchControlPanel';
+import { EquipmentControlPanel } from './components/EquipmentControlPanel/EquipmentControlPanel';
 import { IconTrash } from '@tabler/icons-react';
 
 function App() {
@@ -292,7 +293,7 @@ function App() {
           fail_safe_mode: 'normally_closed',
           response_time_s: 0.2,
           air_pressure: 6,
-          state: 'open',
+          state: 'closed',
           enabled: true
         },
         {
@@ -481,6 +482,9 @@ function App() {
                   />
                   <Box mt="md">
                     <SwitchControlPanel />
+                  </Box>
+                  <Box mt="md">
+                    <EquipmentControlPanel />
                   </Box>
                 </>
               )}

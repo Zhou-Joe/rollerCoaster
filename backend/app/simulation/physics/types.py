@@ -25,6 +25,9 @@ class EquipmentForceBreakdown:
     # LSM specific state
     lsm_stators_active: int = 0
     lsm_overlap_ratio: float = 0.0
+    # Brake overlap ratios
+    brake_overlap_ratio: float = 0.0
+    trim_overlap_ratio: float = 0.0
 
 
 @dataclass

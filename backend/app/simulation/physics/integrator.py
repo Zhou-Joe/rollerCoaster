@@ -252,7 +252,9 @@ class PhysicsSimulator:
                     booster_force_n=equipment_breakdown.booster_force_n,
                     trim_force_n=equipment_breakdown.trim_force_n,
                     lsm_stators_active=equipment_breakdown.lsm_stators_active,
-                    lsm_overlap_ratio=equipment_breakdown.lsm_overlap_ratio
+                    lsm_overlap_ratio=equipment_breakdown.lsm_overlap_ratio,
+                    brake_overlap_ratio=equipment_breakdown.brake_overlap_ratio,
+                    trim_overlap_ratio=equipment_breakdown.trim_overlap_ratio
                 )
 
             # Skip normal physics - lift controls everything
@@ -277,8 +279,48 @@ class PhysicsSimulator:
         # Update velocity - allow negative velocity for rollback
         new_velocity = state.velocity_mps + acceleration * dt
 
+        # Compute non-equipment forces (gravity, drag, rolling resistance)
+        non_equipment_force = forces.gravity_tangent_n + forces.drag_n + forces.rolling_resistance_n
+
+        # Check if braking should clamp velocity to zero
+        # Case 1: Velocity crossing zero due to braking
+        velocity_crossing_zero = (state.velocity_mps > 0 and new_velocity < 0) or \
+                                  (state.velocity_mps < 0 and new_velocity > 0)
+
+        if velocity_crossing_zero:
+            # Check if braking force is causing the reversal
+            braking_overwhelming = abs(equipment_force_n) > abs(non_equipment_force) * 0.5
+            if braking_overwhelming or abs(equipment_force_n) > 100:
+                # Train should stop at zero, not reverse
+                new_velocity = 0.0
+                # Calculate stopping position using kinematic equation
+                if acceleration != 0:
+                    stop_distance = -(state.velocity_mps ** 2) / (2 * acceleration)
+                    new_s_front = state.s_front_m + stop_distance
+
+        # Case 2: Train is nearly stopped and brakes can hold it
+        if abs(new_velocity) < 0.1:
+            # Check if brakes can overcome other forces (especially gravity)
+            # Use abs() since brake force sign depends on velocity direction
+            if abs(equipment_force_n) > 100:  # Significant braking force
+                # Check if brake force magnitude exceeds non-equipment force
+                if abs(equipment_force_n) >= abs(non_equipment_force):
+                    # Brakes can hold the train - clamp to zero
+                    new_velocity = 0.0
+                    acceleration = 0.0
+                elif abs(new_velocity) < 0.01:
+                    # Very low velocity - clamp anyway to prevent creep
+                    new_velocity = 0.0
+                    acceleration = 0.0
+
         # Advance distance with constant-acceleration kinematics for this step.
-        new_s_front = state.s_front_m + state.velocity_mps * dt + 0.5 * acceleration * dt * dt
+        if new_velocity != 0 or acceleration == 0:
+            # Normal kinematic update
+            new_s_front = state.s_front_m + state.velocity_mps * dt + 0.5 * acceleration * dt * dt
+        else:
+            # Velocity clamped to zero - use the already calculated position
+            if 'new_s_front' not in locals():
+                new_s_front = state.s_front_m
 
         # Get path length for boundary checking
         original_path_id = state.path_id
@@ -315,6 +357,26 @@ class PhysicsSimulator:
                 # print(f"[DEBUG] Train stuck at start of {state.path_id}, stopping backward motion")
                 new_velocity = 0.0
                 acceleration = 0.0
+
+        # If stopped and in an active brake zone with sufficient braking force, stay stopped
+        # This handles the case where gravity would otherwise pull the train backward
+        if abs(new_velocity) < 0.1 and abs(equipment_force_n) > 100 and self.equipment_manager:
+            # Check brake overlap
+            brake_overlap = equipment_breakdown.brake_overlap_ratio if equipment_breakdown else 0.0
+            if brake_overlap > 0.05:
+                # Train is in brake zone - calculate if brakes can hold against gravity
+                # Brakes must overcome gravity component along the track
+                gravity_component = forces.gravity_tangent_n
+                brake_magnitude = abs(equipment_force_n)
+
+                # If brakes are stronger than gravity, clamp to zero
+                if brake_magnitude > abs(gravity_component) * 0.8:
+                    new_velocity = 0.0
+                    acceleration = 0.0
+                elif abs(new_velocity) < 0.01:
+                    # Very low speed - force stop anyway
+                    new_velocity = 0.0
+                    acceleration = 0.0
 
         current_sample = get_geometry_at_position(
             self.geometry_cache,
@@ -363,7 +425,9 @@ class PhysicsSimulator:
                 booster_force_n=equipment_breakdown.booster_force_n,
                 trim_force_n=equipment_breakdown.trim_force_n,
                 lsm_stators_active=equipment_breakdown.lsm_stators_active,
-                lsm_overlap_ratio=equipment_breakdown.lsm_overlap_ratio
+                lsm_overlap_ratio=equipment_breakdown.lsm_overlap_ratio,
+                brake_overlap_ratio=equipment_breakdown.brake_overlap_ratio,
+                trim_overlap_ratio=equipment_breakdown.trim_overlap_ratio
             )
 
         # Debug: Log state after junction transition

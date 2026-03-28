@@ -32,6 +32,7 @@ interface EquipmentForm {
   // Brake
   max_brake_force_n?: number;
   fail_safe_mode?: 'normally_open' | 'normally_closed';
+  state?: 'open' | 'closed';
   // Track Switch
   junction_id?: string;
   outgoing_path_ids?: string[];
@@ -129,7 +130,7 @@ export function EquipmentEditor() {
       newEquipment.fail_safe_mode = form.fail_safe_mode || 'normally_closed';
       newEquipment.response_time_s = 0.2;
       newEquipment.air_pressure = 6;
-      newEquipment.state = 'open';
+      newEquipment.state = form.state || 'open';
     } else if (form.equipment_type === 'trim_brake') {
       newEquipment.max_force_n = form.max_brake_force_n || 3000;
       newEquipment.target_velocity_mps = 10;
@@ -188,6 +189,7 @@ export function EquipmentEditor() {
       // Brake params
       max_brake_force_n: eq.max_brake_force_n ?? 8000,
       fail_safe_mode: eq.fail_safe_mode ?? 'normally_closed',
+      state: eq.state ?? 'open',
       // Switch params
       junction_id: eq.junction_id ?? '',
       outgoing_path_ids: eq.outgoing_path_ids ?? [],
@@ -411,6 +413,16 @@ export function EquipmentEditor() {
                           label="Brake Force (N)"
                           value={form.max_brake_force_n}
                           onChange={(v) => setForm({ ...form, max_brake_force_n: Number(v) || 0 })}
+                        />
+                        <SegmentedControl
+                          size="xs"
+                          fullWidth
+                          value={form.state || 'open'}
+                          onChange={(v) => setForm({ ...form, state: v as 'open' | 'closed' })}
+                          data={[
+                            { value: 'open', label: 'Open (No Brake)' },
+                            { value: 'closed', label: 'Closed (Braking)' },
+                          ]}
                         />
                         <SegmentedControl
                           size="xs"

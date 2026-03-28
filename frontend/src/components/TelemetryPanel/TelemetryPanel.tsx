@@ -23,13 +23,7 @@ export function TelemetryPanel({ trainId }: TelemetryPanelProps) {
     : computeTrainKinematics(null, 0, 0, 0);
 
   if (!train) {
-    return (
-      <Paper p="md" withBorder>
-        <Text c="dimmed" size="sm">
-          No train selected
-        </Text>
-      </Paper>
-    );
+    return null;
   }
 
   return (

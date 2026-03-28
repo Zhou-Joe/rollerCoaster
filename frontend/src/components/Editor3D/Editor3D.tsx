@@ -116,7 +116,7 @@ export function Editor3D() {
         <directionalLight position={[-50, 50, -50]} intensity={0.3} />
 
         {/* Scenery - grass ground and trees */}
-        <Scenery paths={interpolatedPaths} />
+        <Scenery paths={interpolatedPaths} groundSize={1000} />
 
         {/* Grid - semi-transparent to work with grass */}
         <Grid

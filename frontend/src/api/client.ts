@@ -139,11 +139,27 @@ export const createTrain = async (projectId: string, vehicleIds: string[], pathI
 }
 
 export const setTrainPosition = async (projectId: string, trainId: string, pathId: string, position: number): Promise<void> => {
-  await api.put(`/physics/projects/${projectId}/trains/${trainId}/position`, { path_id: pathId, position_s: position })
+  await api.post(`/physics/projects/${projectId}/trains/${trainId}/position`, { path_id: pathId, s: position })
 }
 
 export const setTrainVelocity = async (projectId: string, trainId: string, velocity: number): Promise<void> => {
   await api.put(`/physics/projects/${projectId}/trains/${trainId}/velocity`, { velocity_mps: velocity })
+}
+
+// Export/Import APIs
+export const exportProject = async (projectId: string): Promise<Project> => {
+  const response = await api.get(`/projects/${projectId}/export`)
+  return response.data
+}
+
+export const importProject = async (projectId: string, data: Project): Promise<{ status: string; id: string }> => {
+  const response = await api.post(`/projects/${projectId}/import`, data)
+  return response.data
+}
+
+export const importNewProject = async (data: Project, filename?: string): Promise<{ status: string; id: string }> => {
+  const response = await api.post('/projects/import/new', data, { params: { filename } })
+  return response.data
 }
 
 export default api

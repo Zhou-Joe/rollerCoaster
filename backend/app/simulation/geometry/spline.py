@@ -1,6 +1,6 @@
 """Centripetal Catmull-Rom spline interpolation with rotation-minimizing frames"""
 
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 import numpy as np
 from app.models.track import Point
 from .errors import GeometryError

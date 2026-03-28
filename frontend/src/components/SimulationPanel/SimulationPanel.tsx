@@ -27,6 +27,7 @@ interface HistoryPoint {
   lsmForceN: number;
   liftForceN: number;
   brakeForceN: number;
+  trimForceN: number;
   equipmentForceN: number;
 }
 
@@ -185,6 +186,69 @@ function TrainCard({ train, path, history }: {
         </Box>
       </Box>
 
+      {/* LSM Force Indicator */}
+      {(train.equipment_forces?.lsm_force_n ?? 0) !== 0 && (
+        <>
+          <Text size="xs" c="gray.4" mb={4}>LSM Force</Text>
+          <Box style={{ fontSize: '11px' }} mb="xs">
+            <Box style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #444', paddingBottom: 2, marginBottom: 2 }}>
+              <Text size="xs" c="gray.5" style={{ width: '50%' }}>Force</Text>
+              <Text size="xs" c="gray.5" style={{ width: '50%', textAlign: 'right' }}>Overlap</Text>
+            </Box>
+            <Box style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <Text size="xs" style={{ width: '50%', color: train.equipment_forces!.lsm_force_n > 0 ? '#69db7c' : '#ff8787', fontFamily: 'monospace', fontWeight: 600 }}>
+                {train.equipment_forces!.lsm_force_n > 0 ? '+' : ''}{train.equipment_forces!.lsm_force_n.toFixed(0)} N
+              </Text>
+              <Text size="xs" style={{ width: '50%', color: '#ffa94d', fontFamily: 'monospace', textAlign: 'right' }}>
+                {((train.equipment_forces?.lsm_overlap_ratio ?? 0) * 100).toFixed(1)}%
+              </Text>
+            </Box>
+          </Box>
+        </>
+      )}
+
+      {/* Brake Force Indicator */}
+      {(train.equipment_forces?.brake_force_n ?? 0) !== 0 && (
+        <>
+          <Text size="xs" c="gray.4" mb={4}>Pneumatic Brake</Text>
+          <Box style={{ fontSize: '11px' }} mb="xs">
+            <Box style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #444', paddingBottom: 2, marginBottom: 2 }}>
+              <Text size="xs" c="gray.5" style={{ width: '50%' }}>Force</Text>
+              <Text size="xs" c="gray.5" style={{ width: '50%', textAlign: 'right' }}>Overlap</Text>
+            </Box>
+            <Box style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <Text size="xs" style={{ width: '50%', color: '#ff8787', fontFamily: 'monospace', fontWeight: 600 }}>
+                {train.equipment_forces!.brake_force_n.toFixed(0)} N
+              </Text>
+              <Text size="xs" style={{ width: '50%', color: '#ffa94d', fontFamily: 'monospace', textAlign: 'right' }}>
+                {((train.equipment_forces?.brake_overlap_ratio ?? 0) * 100).toFixed(1)}%
+              </Text>
+            </Box>
+          </Box>
+        </>
+      )}
+
+      {/* Trim Brake Force Indicator */}
+      {(train.equipment_forces?.trim_force_n ?? 0) !== 0 && (
+        <>
+          <Text size="xs" c="gray.4" mb={4}>Trim Brake (Eddy Current)</Text>
+          <Box style={{ fontSize: '11px' }} mb="xs">
+            <Box style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #444', paddingBottom: 2, marginBottom: 2 }}>
+              <Text size="xs" c="gray.5" style={{ width: '50%' }}>Force</Text>
+              <Text size="xs" c="gray.5" style={{ width: '50%', textAlign: 'right' }}>Overlap</Text>
+            </Box>
+            <Box style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <Text size="xs" style={{ width: '50%', color: '#ff8787', fontFamily: 'monospace', fontWeight: 600 }}>
+                {train.equipment_forces!.trim_force_n.toFixed(0)} N
+              </Text>
+              <Text size="xs" style={{ width: '50%', color: '#ffa94d', fontFamily: 'monospace', textAlign: 'right' }}>
+                {((train.equipment_forces?.trim_overlap_ratio ?? 0) * 100).toFixed(1)}%
+              </Text>
+            </Box>
+          </Box>
+        </>
+      )}
+
       <Divider my="xs" color="#444" />
 
       {/* G-Forces and Acceleration comparison */}
@@ -246,9 +310,9 @@ function TrainCard({ train, path, history }: {
           <ChartWrapper
             data={history}
             lines={[
-              { dataKey: 'lsmForceN', stroke: '#69db7c', name: 'LSM' },
               { dataKey: 'liftForceN', stroke: '#74c0fc', name: 'Lift' },
               { dataKey: 'brakeForceN', stroke: '#ff8787', name: 'Brake' },
+              { dataKey: 'trimForceN', stroke: '#ff6b6b', name: 'Trim' },
               { dataKey: 'equipmentForceN', stroke: '#ffd43b', name: 'Total Equip', strokeWidth: 2 },
             ]}
             yAxisFormatter={(value) => `${(value / 1000).toFixed(1)}k`}
@@ -302,6 +366,7 @@ export function SimulationPanel({ simulationState, interpolatedPaths }: Simulati
           lsmForceN: train.equipment_forces?.lsm_force_n ?? 0,
           liftForceN: train.equipment_forces?.lift_force_n ?? 0,
           brakeForceN: train.equipment_forces?.brake_force_n ?? 0,
+          trimForceN: train.equipment_forces?.trim_force_n ?? 0,
           equipmentForceN: train.forces.equipment_n,
         }];
 

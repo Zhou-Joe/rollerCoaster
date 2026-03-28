@@ -66,7 +66,7 @@ def compute_booster_force(
         return _compute_drive_force(booster, state, train_velocity_mps)
 
     elif state.mode == BoosterMode.BRAKE:
-        return _compute_booster_brake_force(booster, state)
+        return _compute_booster_brake_force(booster, state, train_velocity_mps)
 
     return 0.0
 
@@ -106,12 +106,14 @@ def _compute_drive_force(
 
 def _compute_booster_brake_force(
     booster: Booster,
-    state: BoosterState
+    state: BoosterState,
+    train_velocity_mps: float
 ) -> float:
     """
     Compute braking force when booster is in brake mode.
 
     When in brake mode, the wheels apply friction against the train.
+    Force always opposes velocity direction.
     """
     force = booster.brake_friction_force_n
 
@@ -119,9 +121,10 @@ def _compute_booster_brake_force(
     wheel_factor = min(booster.wheel_count / 4.0, 1.0)
     force *= wheel_factor
 
-    state.current_force_n = -force  # Negative = braking
+    # Force always opposes velocity direction
+    state.current_force_n = -math.copysign(force, train_velocity_mps)
 
-    return -force
+    return state.current_force_n
 
 
 def set_booster_mode(

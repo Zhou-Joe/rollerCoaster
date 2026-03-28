@@ -1,17 +1,26 @@
 import { useState } from 'react';
 import {
   Paper, Text, Group, Button, Stack, NumberInput,
-  Accordion, Badge, ActionIcon
+  Accordion, Badge, ActionIcon, Modal, TextInput, Select
 } from '@mantine/core';
 import { IconPlus, IconTrash, IconEdit } from '@tabler/icons-react';
 import { useProjectStore } from '../../state/projectStore';
-import { updateProject, getInterpolatedPath } from '../../api/client';
+import { updateProject, getInterpolatedPath, resetSimulator, setTrainPosition } from '../../api/client';
+import { ExportImportPanel } from '../ExportImportPanel/ExportImportPanel';
 
 export function TrackEditor() {
   const { currentProject, simulationState, interpolatedPaths, setCurrentProject, setInterpolatedPath } = useProjectStore();
   const [newPoint, setNewPoint] = useState({ x: 0, y: 0, z: 5, bank_deg: 0 });
   const [editingPointId, setEditingPointId] = useState<string | null>(null);
   const [editValues, setEditValues] = useState({ x: 0, y: 0, z: 0, bank_deg: 0 });
+
+  // Vehicle editing state
+  const [editingVehicleId, setEditingVehicleId] = useState<string | null>(null);
+  const [vehicleForm, setVehicleForm] = useState({ id: '', length_m: 2.0, dry_mass_kg: 500, capacity: 4, passenger_mass_per_person_kg: 75 });
+
+  // Train editing state
+  const [editingTrainId, setEditingTrainId] = useState<string | null>(null);
+  const [trainForm, setTrainForm] = useState({ id: '', vehicle_ids: [] as string[], current_path_id: '', front_position_s: 5.0 });
 
   if (!currentProject) {
     return (
@@ -46,6 +55,7 @@ export function TrackEditor() {
       const updatedPoints = [...currentProject.points, newPointData];
       await updateProject(currentProject.id, { points: updatedPoints });
       setCurrentProject({ ...currentProject, points: updatedPoints });
+      await resetSimulator(currentProject.id);
       await refreshPaths(currentProject.id);
     } catch (e) {
       console.error('Failed to add point:', e);
@@ -66,6 +76,7 @@ export function TrackEditor() {
         paths: newPaths
       });
       setCurrentProject({ ...currentProject, points: newPoints, paths: newPaths });
+      await resetSimulator(currentProject.id);
       await refreshPaths(currentProject.id);
     } catch (e) {
       console.error('Failed to delete point:', e);
@@ -97,6 +108,7 @@ export function TrackEditor() {
       await updateProject(currentProject.id, { points: updatedPoints });
       setCurrentProject({ ...currentProject, points: updatedPoints });
       setEditingPointId(null);
+      await resetSimulator(currentProject.id);
       await refreshPaths(currentProject.id);
     } catch (e) {
       console.error('Failed to update point:', e);
@@ -155,6 +167,94 @@ export function TrackEditor() {
       setCurrentProject({ ...currentProject, trains: newTrains });
     } catch (e) {
       console.error('Failed to delete train:', e);
+    }
+  };
+
+  const handleEditTrain = (trainId: string) => {
+    const train = currentProject.trains.find(t => t.id === trainId);
+    if (train) {
+      setTrainForm({
+        id: train.id,
+        vehicle_ids: [...train.vehicle_ids],
+        current_path_id: train.current_path_id || '',
+        front_position_s: train.front_position_s || 5.0
+      });
+      setEditingTrainId(trainId);
+    }
+  };
+
+  const handleSaveTrain = async () => {
+    if (!currentProject.id || !editingTrainId) return;
+    try {
+      // First update simulation position (using original train ID)
+      console.log('Setting train position:', { trainId: editingTrainId, pathId: trainForm.current_path_id, position: trainForm.front_position_s });
+      await setTrainPosition(currentProject.id, editingTrainId, trainForm.current_path_id, trainForm.front_position_s);
+      console.log('Train position updated successfully');
+
+      // Then update project data (may change train ID)
+      const updatedTrains = currentProject.trains.map(t =>
+        t.id === editingTrainId
+          ? { ...t, id: trainForm.id, vehicle_ids: trainForm.vehicle_ids, current_path_id: trainForm.current_path_id, front_position_s: trainForm.front_position_s }
+          : t
+      );
+      await updateProject(currentProject.id, { trains: updatedTrains });
+      setCurrentProject({ ...currentProject, trains: updatedTrains });
+
+      setEditingTrainId(null);
+    } catch (e) {
+      console.error('Failed to save train:', e);
+      alert('Failed to save train: ' + (e as Error).message);
+    }
+  };
+
+  const handleDeleteVehicle = async (vehicleId: string) => {
+    if (!currentProject.id) return;
+    try {
+      // Remove vehicle from any trains that use it
+      const updatedTrains = currentProject.trains.map(t => ({
+        ...t,
+        vehicle_ids: t.vehicle_ids.filter(vid => vid !== vehicleId)
+      }));
+      const newVehicles = currentProject.vehicles.filter(v => v.id !== vehicleId);
+      await updateProject(currentProject.id, { vehicles: newVehicles, trains: updatedTrains });
+      setCurrentProject({ ...currentProject, vehicles: newVehicles, trains: updatedTrains });
+    } catch (e) {
+      console.error('Failed to delete vehicle:', e);
+    }
+  };
+
+  const handleEditVehicle = (vehicleId: string) => {
+    const vehicle = currentProject.vehicles.find(v => v.id === vehicleId);
+    if (vehicle) {
+      setVehicleForm({
+        id: vehicle.id,
+        length_m: vehicle.length_m,
+        dry_mass_kg: vehicle.dry_mass_kg,
+        capacity: vehicle.capacity,
+        passenger_mass_per_person_kg: vehicle.passenger_mass_per_person_kg || 75
+      });
+      setEditingVehicleId(vehicleId);
+    }
+  };
+
+  const handleSaveVehicle = async () => {
+    if (!currentProject.id || !editingVehicleId) return;
+    try {
+      const updatedVehicles = currentProject.vehicles.map(v =>
+        v.id === editingVehicleId
+          ? { ...v, id: vehicleForm.id, length_m: vehicleForm.length_m, dry_mass_kg: vehicleForm.dry_mass_kg, capacity: vehicleForm.capacity, passenger_mass_per_person_kg: vehicleForm.passenger_mass_per_person_kg }
+          : v
+      );
+      // Also update vehicle ID in trains if it changed
+      const updatedTrains = currentProject.trains.map(t => ({
+        ...t,
+        vehicle_ids: t.vehicle_ids.map(vid => vid === editingVehicleId ? vehicleForm.id : vid)
+      }));
+      await updateProject(currentProject.id, { vehicles: updatedVehicles, trains: updatedTrains });
+      setCurrentProject({ ...currentProject, vehicles: updatedVehicles, trains: updatedTrains });
+      setEditingVehicleId(null);
+    } catch (e) {
+      console.error('Failed to save vehicle:', e);
     }
   };
 
@@ -371,14 +471,24 @@ export function TrackEditor() {
                 <Paper key={train.id} p="xs" withBorder style={{ background: '#222' }}>
                   <Group justify="space-between">
                     <Text size="xs" fw={500}>{train.id}</Text>
-                    <ActionIcon
-                      size="xs"
-                      variant="subtle"
-                      color="red"
-                      onClick={() => handleDeleteTrain(train.id)}
-                    >
-                      <IconTrash size={12} />
-                    </ActionIcon>
+                    <Group gap={4}>
+                      <ActionIcon
+                        size="xs"
+                        variant="subtle"
+                        color="blue"
+                        onClick={() => handleEditTrain(train.id)}
+                      >
+                        <IconEdit size={12} />
+                      </ActionIcon>
+                      <ActionIcon
+                        size="xs"
+                        variant="subtle"
+                        color="red"
+                        onClick={() => handleDeleteTrain(train.id)}
+                      >
+                        <IconTrash size={12} />
+                      </ActionIcon>
+                    </Group>
                   </Group>
                   <Text size="xs" c="dimmed">{train.vehicle_ids.length} vehicle(s)</Text>
                 </Paper>
@@ -412,7 +522,27 @@ export function TrackEditor() {
             <Stack gap="xs">
               {currentProject.vehicles.map((vehicle) => (
                 <Paper key={vehicle.id} p="xs" withBorder style={{ background: '#222' }}>
-                  <Text size="xs" fw={500}>{vehicle.id}</Text>
+                  <Group justify="space-between">
+                    <Text size="xs" fw={500}>{vehicle.id}</Text>
+                    <Group gap={4}>
+                      <ActionIcon
+                        size="xs"
+                        variant="subtle"
+                        color="blue"
+                        onClick={() => handleEditVehicle(vehicle.id)}
+                      >
+                        <IconEdit size={12} />
+                      </ActionIcon>
+                      <ActionIcon
+                        size="xs"
+                        variant="subtle"
+                        color="red"
+                        onClick={() => handleDeleteVehicle(vehicle.id)}
+                      >
+                        <IconTrash size={12} />
+                      </ActionIcon>
+                    </Group>
+                  </Group>
                   <Group gap="xs" mt="xs">
                     <Text size="xs" c="dimmed">Length: {vehicle.length_m}m</Text>
                     <Text size="xs" c="dimmed">Mass: {vehicle.dry_mass_kg}kg</Text>
@@ -424,6 +554,135 @@ export function TrackEditor() {
           </Accordion.Panel>
         </Accordion.Item>
       </Accordion>
+
+      {/* Vehicle Edit Modal */}
+      <Modal
+        opened={editingVehicleId !== null}
+        onClose={() => setEditingVehicleId(null)}
+        title="Edit Vehicle"
+        size="sm"
+      >
+        <Stack gap="sm">
+          <TextInput
+            size="xs"
+            label="ID"
+            value={vehicleForm.id}
+            onChange={(e) => setVehicleForm({ ...vehicleForm, id: e.target.value })}
+          />
+          <Group grow>
+            <NumberInput
+              size="xs"
+              label="Length (m)"
+              value={vehicleForm.length_m}
+              onChange={(v) => setVehicleForm({ ...vehicleForm, length_m: Number(v) || 0 })}
+              min={0.5}
+              step={0.1}
+            />
+            <NumberInput
+              size="xs"
+              label="Dry Mass (kg)"
+              value={vehicleForm.dry_mass_kg}
+              onChange={(v) => setVehicleForm({ ...vehicleForm, dry_mass_kg: Number(v) || 0 })}
+              min={100}
+            />
+          </Group>
+          <Group grow>
+            <NumberInput
+              size="xs"
+              label="Capacity"
+              value={vehicleForm.capacity}
+              onChange={(v) => setVehicleForm({ ...vehicleForm, capacity: Number(v) || 0 })}
+              min={1}
+            />
+            <NumberInput
+              size="xs"
+              label="Passenger Mass (kg/person)"
+              value={vehicleForm.passenger_mass_per_person_kg}
+              onChange={(v) => setVehicleForm({ ...vehicleForm, passenger_mass_per_person_kg: Number(v) || 75 })}
+              min={50}
+            />
+          </Group>
+          <Group grow mt="md">
+            <Button size="xs" variant="subtle" onClick={() => setEditingVehicleId(null)}>Cancel</Button>
+            <Button size="xs" onClick={handleSaveVehicle}>Save</Button>
+          </Group>
+        </Stack>
+      </Modal>
+
+      {/* Train Edit Modal */}
+      <Modal
+        opened={editingTrainId !== null}
+        onClose={() => setEditingTrainId(null)}
+        title="Edit Train"
+        size="sm"
+      >
+        <Stack gap="sm">
+          <TextInput
+            size="xs"
+            label="ID"
+            value={trainForm.id}
+            onChange={(e) => setTrainForm({ ...trainForm, id: e.target.value })}
+          />
+          <Select
+            size="xs"
+            label="Current Path"
+            value={trainForm.current_path_id}
+            onChange={(v) => setTrainForm({ ...trainForm, current_path_id: v || '' })}
+            data={currentProject.paths.map(p => ({ value: p.id, label: p.name || p.id }))}
+          />
+          <NumberInput
+            size="xs"
+            label="Front Position (m)"
+            value={trainForm.front_position_s}
+            onChange={(v) => setTrainForm({ ...trainForm, front_position_s: Number(v) || 0 })}
+            min={0}
+          />
+          <Text size="xs" fw={500}>Select Vehicles:</Text>
+          <Stack gap={4}>
+            {currentProject.vehicles.map((v) => (
+              <Paper
+                key={v.id}
+                p="xs"
+                withBorder
+                style={{
+                  background: trainForm.vehicle_ids.includes(v.id) ? '#2a4a2a' : '#2a2a2a',
+                  cursor: 'pointer',
+                }}
+                onClick={() => {
+                  if (trainForm.vehicle_ids.includes(v.id)) {
+                    setTrainForm({ ...trainForm, vehicle_ids: trainForm.vehicle_ids.filter(id => id !== v.id) });
+                  } else {
+                    setTrainForm({ ...trainForm, vehicle_ids: [...trainForm.vehicle_ids, v.id] });
+                  }
+                }}
+              >
+                <Group justify="space-between">
+                  <Text size="xs">{v.id}</Text>
+                  <Badge size="xs">{v.length_m}m</Badge>
+                </Group>
+              </Paper>
+            ))}
+          </Stack>
+          <Text size="xs" c="dimmed">Selected: {trainForm.vehicle_ids.join(' → ') || 'None'}</Text>
+          <Group grow mt="md">
+            <Button size="xs" variant="subtle" onClick={() => setEditingTrainId(null)}>Cancel</Button>
+            <Button size="xs" onClick={handleSaveTrain} disabled={trainForm.vehicle_ids.length === 0}>Save</Button>
+          </Group>
+        </Stack>
+      </Modal>
+
+      {/* Export/Import Panel */}
+      {currentProject.id && (
+        <Paper p="sm" withBorder style={{ background: '#2a2a2a' }}>
+          <ExportImportPanel
+            project={currentProject}
+            projectId={currentProject.id}
+            onImportSuccess={(newProjectId) => {
+              window.location.href = `/?project=${newProjectId}`;
+            }}
+          />
+        </Paper>
+      )}
     </Stack>
   );
 }

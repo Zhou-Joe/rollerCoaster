@@ -43,6 +43,8 @@ class EquipmentForceBreakdown:
     trim_force_n: float = 0.0
     lsm_stators_active: int = 0
     lsm_overlap_ratio: float = 0.0
+    brake_overlap_ratio: float = 0.0
+    trim_overlap_ratio: float = 0.0
 
 
 # Helper function for backward compatibility
@@ -202,10 +204,12 @@ class EquipmentManager:
                     if state:
                         force = compute_pneumatic_brake_force(
                             equipment, state,
-                            train_s, train_velocity_mps, dt
+                            train_s, train_velocity_mps,
+                            train_length_m, magnet_positions, dt
                         )
                         total_force += force  # Already negative for braking
                         breakdown.brake_force_n = force
+                        breakdown.brake_overlap_ratio = state.overlap_ratio
 
             elif isinstance(equipment, TrimBrake):
                 if equipment.path_id == train_path_id:
@@ -213,10 +217,12 @@ class EquipmentManager:
                     if state:
                         force = compute_trim_brake_force(
                             equipment, state,
-                            train_s, train_velocity_mps, dt
+                            train_s, train_velocity_mps,
+                            train_length_m, magnet_positions, dt
                         )
                         total_force += force  # Already negative for braking
                         breakdown.trim_force_n = force
+                        breakdown.trim_overlap_ratio = state.overlap_ratio
 
             elif isinstance(equipment, Booster):
                 if equipment.path_id == train_path_id:

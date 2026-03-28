@@ -144,7 +144,9 @@ async def get_simulation_state(project_id: str):
                 "booster_force_n": t.equipment_forces.booster_force_n,
                 "trim_force_n": t.equipment_forces.trim_force_n,
                 "lsm_stators_active": t.equipment_forces.lsm_stators_active,
-                "lsm_overlap_ratio": t.equipment_forces.lsm_overlap_ratio
+                "lsm_overlap_ratio": t.equipment_forces.lsm_overlap_ratio,
+                "brake_overlap_ratio": t.equipment_forces.brake_overlap_ratio,
+                "trim_overlap_ratio": t.equipment_forces.trim_overlap_ratio
             },
             gforces={
                 "normal_g": t.gforces.normal_g,
@@ -205,7 +207,9 @@ async def step_simulation(project_id: str, request: StepRequest = None):
                 "booster_force_n": t.equipment_forces.booster_force_n,
                 "trim_force_n": t.equipment_forces.trim_force_n,
                 "lsm_stators_active": t.equipment_forces.lsm_stators_active,
-                "lsm_overlap_ratio": t.equipment_forces.lsm_overlap_ratio
+                "lsm_overlap_ratio": t.equipment_forces.lsm_overlap_ratio,
+                "brake_overlap_ratio": t.equipment_forces.brake_overlap_ratio,
+                "trim_overlap_ratio": t.equipment_forces.trim_overlap_ratio
             },
             gforces={
                 "normal_g": t.gforces.normal_g,
